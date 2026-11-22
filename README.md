@@ -8,7 +8,6 @@ A small web app that matches receipts in Paperless-ngx to transactions in an Act
 - The app reads receipts from the Paperless API, filtered by tag, and matches each transaction to a receipt by amount, date and vendor name.
 - The amount comes from a Paperless custom field (default `amount`). If that is empty, it looks for the amount in the receipt's OCR text.
 - It lists transactions with no receipt, and receipts with no transaction, per business.
-- Once a week it can email the missing list, using the last export you uploaded.
 
 Transfers between accounts, income and starting balances are skipped.
 
@@ -26,9 +25,6 @@ Transfers between accounts, income and starting balances are skipped.
 | `PAPERLESS_TOKEN` | Paperless API token |
 | `BUSINESSES` | `tag\|Actual account name`, separated by `;` |
 | `AMOUNT_FIELD` | Paperless custom field holding the amount, default `amount` |
-| `WEEKLY_EMAIL` | `mon 08:00` style day and time, or `off` |
-| `SMTP_HOST`, `SMTP_PORT` | Default `smtp.fastmail.com`, `465` |
-| `SMTP_USER`, `SMTP_PASS`, `MAIL_TO` | Needed for email |
 | `DATA_DIR` | Where uploads and results are kept, default `/data` |
 
 ## Limits

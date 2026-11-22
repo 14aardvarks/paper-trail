@@ -10,10 +10,6 @@ services:
       PAPERLESS_TOKEN: ${PAPERLESS_TOKEN}
       # tag|actual account name, separated by semicolons
       BUSINESSES: "my-business-tag|My Business Checking;other-tag|Other Account"
-      WEEKLY_EMAIL: "mon 08:00"   # or "off"
-      SMTP_USER: ${SMTP_USER}
-      SMTP_PASS: ${SMTP_PASS}
-      MAIL_TO: ${MAIL_TO}
     volumes:
       - ./data:/data
     ports:

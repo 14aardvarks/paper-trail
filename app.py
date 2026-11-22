@@ -4,11 +4,8 @@ import glob
 import io
 import json
 import os
-import smtplib
-import ssl
 import threading
 import time
-from email.message import EmailMessage
 
 from flask import Flask, Response, redirect, render_template_string, request, url_for
 
@@ -22,12 +19,6 @@ PL_TOKEN = os.environ.get("PAPERLESS_TOKEN", "")
 AMOUNT_FIELD = os.environ.get("AMOUNT_FIELD", "amount")
 # "tag|account;tag|account"
 BUSINESSES = [b.split("|", 1) for b in os.environ.get("BUSINESSES", "").split(";") if "|" in b]
-SMTP_HOST = os.environ.get("SMTP_HOST", "smtp.fastmail.com")
-SMTP_PORT = int(os.environ.get("SMTP_PORT", "465"))
-SMTP_USER = os.environ.get("SMTP_USER", "")
-SMTP_PASS = os.environ.get("SMTP_PASS", "")
-MAIL_TO = os.environ.get("MAIL_TO", SMTP_USER)
-WEEKLY = os.environ.get("WEEKLY_EMAIL", "mon 08:00")  # "mon 08:00" or "off"
 
 os.makedirs(EXPORTS, exist_ok=True)
 if os.environ.get("TZ"):
@@ -86,55 +77,6 @@ def load_results():
         return None
 
 
-def email_body(r):
-    lines = ["Paper trail for %s" % r["year"],
-             "Export used: %s (newest transaction %s)" % (r["export"], r["newest_transaction"] or "unknown"), ""]
-    total = 0
-    for b in r["businesses"]:
-        lines.append("%s: %d matched, %d missing a receipt" % (b["tag"], b["matched"], len(b["missing"])))
-        for m in b["missing"]:
-            lines.append("  %s  %s  %s" % (m["date"], m["amount"], m["payee"]))
-        total += len(b["missing"])
-        lines.append("")
-    if total == 0:
-        lines.append("Nothing missing.")
-    return "\n".join(lines)
-
-
-def send_email(r):
-    if not (SMTP_USER and SMTP_PASS and MAIL_TO):
-        raise RuntimeError("SMTP_USER, SMTP_PASS and MAIL_TO are not set")
-    missing = sum(len(b["missing"]) for b in r["businesses"])
-    msg = EmailMessage()
-    msg["Subject"] = "Receipts missing: %d" % missing
-    msg["From"] = SMTP_USER
-    msg["To"] = MAIL_TO
-    msg.set_content(email_body(r))
-    with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, context=ssl.create_default_context()) as s:
-        s.login(SMTP_USER, SMTP_PASS)
-        s.send_message(msg)
-
-
-def scheduler():
-    days = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
-    last = None
-    while True:
-        time.sleep(30)
-        if WEEKLY.lower() == "off":
-            continue
-        try:
-            d, hm = WEEKLY.split()
-            now = dt.datetime.now()
-            key = now.strftime("%Y-%m-%d")
-            if days[now.weekday()] == d.lower() and now.strftime("%H:%M") == hm and last != key:
-                last = key
-                send_email(run_all())
-        except Exception as e:  # keep the loop alive
-            print("scheduled run failed:", e, flush=True)
-
-
-threading.Thread(target=scheduler, daemon=True).start()
-
 PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Paper Trail</title>
 <style>
@@ -162,7 +104,6 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}.bad{color:var(--ba
 <button>Upload and check</button></form>
 <form class="row" style="margin-top:8px" method="post" action="{{ url_for('rerun') }}">
 <input type="hidden" name="year" value="{{ year }}"><button class="alt">Re-run on latest export</button></form>
-{% if r %}<form class="row" style="margin-top:8px" method="post" action="{{ url_for('email') }}"><button class="alt">Email me this list now</button></form>{% endif %}
 </div>
 {% if r %}
 <div class="mut">Export {{ r.export }}, newest transaction {{ r.newest_transaction or 'unknown' }}. Checked {{ r.ran_at }}.</div>
@@ -226,18 +167,6 @@ def rerun():
     except Exception as e:
         return page(error="Check failed: %s" % e), 500
     return redirect(url_for("index", msg="Checked."))
-
-
-@app.post("/email")
-def email():
-    r = load_results()
-    if not r:
-        return redirect(url_for("index"))
-    try:
-        send_email(r)
-    except Exception as e:
-        return page(error="Email failed: %s" % e), 500
-    return redirect(url_for("index", msg="Email sent."))
 
 
 @app.get("/download/<int:i>")

@@ -88,7 +88,8 @@ def run_all(year=None):
            "export": os.path.basename(path), "businesses": []}
     newest = None
     for b in businesses:
-        txns = mr.load_transactions(path, year, {b["account"].lower()}, False, False)
+        accts = {a.strip().lower() for a in b["account"].split(";") if a.strip()}
+        txns = mr.load_transactions(path, year, accts, False, False)
         docs = mr.load_receipts(pl, year, b["tag"], AMOUNT_FIELD)
         res = mr.match(txns, docs, 60, 0)
         used = {v[0] for v in res.values()}
@@ -204,7 +205,7 @@ SETTINGS = HEAD + """
 <label>Name</label><input name="name" required placeholder="Rental property">
 <label>Paperless tag</label><input name="tag" list="tags" required>
 <datalist id="tags">{% for t in tags %}<option value="{{ t }}">{% endfor %}</datalist>
-<label>Actual account</label><input name="account" list="accts" required>
+<label>Actual accounts (checking, savings, etc. separate with ;)</label><input name="account" list="accts" required placeholder="Checking;Savings">
 <datalist id="accts">{% for a in accounts %}<option value="{{ a }}">{% endfor %}</datalist>
 <label>Personal accounts that sometimes pay for it (optional, separate with ;)</label><input name="personal" list="accts">
 <div style="margin-top:12px"><button>Add business</button></div>

@@ -92,11 +92,26 @@ def run_all(year=None):
         docs = mr.load_receipts(pl, year, b["tag"], AMOUNT_FIELD)
         res = mr.match(txns, docs, 60, 0)
         used = {v[0] for v in res.values()}
+        paid_personal = []
+        extra = {a.strip().lower() for a in b.get("personal", "").split(";") if a.strip()}
+        if extra:
+            left = [d for d in docs if d["id"] not in used]
+            ptx = mr.load_transactions(path, year, extra, False, False)
+            pres = mr.match(ptx, left, 60, 0)
+            by_doc = {d["id"]: d for d in left}
+            for t in ptx:
+                if t["id"] in pres:
+                    d = by_doc[pres[t["id"]][0]]
+                    used.add(d["id"])
+                    paid_personal.append({"date": str(t["date"]), "amount": "%.2f" % (t["signed"] / 100),
+                                          "payee": t["payee"], "title": d["title"],
+                                          "url": "%s/documents/%d/details" % (PL_URL, d["id"])})
         for t in txns:
             newest = max(newest, t["date"]) if newest else t["date"]
         out["businesses"].append({
             "name": b["name"], "tag": b["tag"], "account": b["account"],
-            "matched": len(res), "docs": len(docs),
+            "matched": len(res), "docs": len(docs), "personal": b.get("personal", ""),
+            "paid_personal": paid_personal,
             "missing": [{"date": str(t["date"]), "amount": "%.2f" % (t["signed"] / 100),
                          "payee": t["payee"], "category": t["category"]}
                         for t in sorted(txns, key=lambda x: x["date"]) if t["id"] not in res],
@@ -166,6 +181,10 @@ INDEX = HEAD + """
 {% if b.missing %}<div class="card scroll"><table><tr><th>Date</th><th>Payee</th><th class="n">Amount</th></tr>
 {% for m in b.missing %}<tr><td>{{ m.date }}</td><td>{{ m.payee }}</td><td class="n">{{ m.amount }}</td></tr>{% endfor %}</table>
 <div style="margin-top:8px"><a href="{{ url_for('download', i=loop.index0) }}">Download CSV</a></div></div>{% endif %}
+{% if b.paid_personal %}<div class="card scroll"><b>{{ b.paid_personal|length }} paid from a personal account</b> (reimburse or log as owner contribution)<table>
+<tr><th>Date</th><th>Receipt</th><th class="n">Amount</th></tr>
+{% for p in b.paid_personal %}<tr><td>{{ p.date }}</td><td><a href="{{ p.url }}">{{ p.title }}</a></td><td class="n">{{ p.amount }}</td></tr>{% endfor %}
+</table></div>{% endif %}
 {% if b.orphans %}<details class="card"><summary>{{ b.orphans|length }} receipts with no transaction</summary><div class="scroll"><table>
 <tr><th>Date</th><th>Receipt</th><th class="n">Amount</th></tr>
 {% for o in b.orphans %}<tr><td>{{ o.date }}</td><td><a href="{{ o.url }}">{{ o.title }}</a></td><td class="n">{{ o.amount }}</td></tr>{% endfor %}
@@ -177,8 +196,8 @@ INDEX = HEAD + """
 SETTINGS = HEAD + """
 <h2>Businesses</h2>
 <div class="mut">Each business is a Paperless tag plus the Actual account that pays for it. Add as many as you need.</div>
-{% if businesses %}<div class="card scroll"><table><tr><th>Name</th><th>Paperless tag</th><th>Actual account</th><th></th></tr>
-{% for b in businesses %}<tr><td>{{ b.name }}</td><td>{{ b.tag }}</td><td>{{ b.account }}</td>
+{% if businesses %}<div class="card scroll"><table><tr><th>Name</th><th>Paperless tag</th><th>Actual account</th><th>Personal accounts</th><th></th></tr>
+{% for b in businesses %}<tr><td>{{ b.name }}</td><td>{{ b.tag }}</td><td>{{ b.account }}</td><td>{{ b.personal }}</td>
 <td><form method="post" action="{{ url_for('delete', i=loop.index0) }}"><button class="alt">Remove</button></form></td></tr>{% endfor %}
 </table></div>{% endif %}
 <form class="card" method="post" action="{{ url_for('add') }}">
@@ -187,6 +206,7 @@ SETTINGS = HEAD + """
 <datalist id="tags">{% for t in tags %}<option value="{{ t }}">{% endfor %}</datalist>
 <label>Actual account</label><input name="account" list="accts" required>
 <datalist id="accts">{% for a in accounts %}<option value="{{ a }}">{% endfor %}</datalist>
+<label>Personal accounts that sometimes pay for it (optional, separate with ;)</label><input name="personal" list="accts">
 <div style="margin-top:12px"><button>Add business</button></div>
 {% if not accounts %}<div class="mut" style="margin-top:8px">Upload an Actual export first and your account names will show up as suggestions.</div>{% endif %}
 </form>
@@ -225,7 +245,8 @@ def add():
     if not (name and tag and account):
         return page(SETTINGS, error="Fill in all three fields.", tags=paperless_tags(), accounts=export_accounts()), 400
     items = load_config()
-    items.append({"name": name, "tag": tag, "account": account})
+    items.append({"name": name, "tag": tag, "account": account,
+                  "personal": request.form.get("personal", "").strip()})
     save_config(items)
     return redirect(url_for("settings", msg="Added %s." % name))
 

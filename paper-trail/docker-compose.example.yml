@@ -1,0 +1,21 @@
+services:
+  paper-trail:
+    build: .
+    image: paper-trail:latest
+    container_name: paper-trail
+    restart: unless-stopped
+    environment:
+      TZ: "America/New_York"
+      PAPERLESS_URL: "https://paperless.example.com"
+      PAPERLESS_TOKEN: ${PAPERLESS_TOKEN}
+      # tag|actual account name, separated by semicolons
+      BUSINESSES: "my-business-tag|My Business Checking;other-tag|Other Account"
+      WEEKLY_EMAIL: "mon 08:00"   # or "off"
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASS: ${SMTP_PASS}
+      MAIL_TO: ${MAIL_TO}
+    volumes:
+      - ./data:/data
+    ports:
+      - "8080:8080"
+    # Put this behind your own login (reverse proxy with SSO). The page has no auth of its own.

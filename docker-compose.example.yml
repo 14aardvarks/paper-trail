@@ -9,7 +9,6 @@ services:
       PAPERLESS_URL: "https://paperless.example.com"
       PAPERLESS_TOKEN: ${PAPERLESS_TOKEN}
       # tag|actual account name, separated by semicolons
-      BUSINESSES: "my-business-tag|My Business Checking;other-tag|Other Account"
     volumes:
       - ./data:/data
     ports:

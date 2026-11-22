@@ -16,6 +16,7 @@ Transfers between accounts, income and starting balances are skipped.
 1. Copy `docker-compose.example.yml`, edit the values, and set `PAPERLESS_TOKEN` (Paperless, My Profile, API Auth Token).
 2. `docker compose up -d --build`
 3. Open port 8080 behind your own authentication.
+4. Open the app, go to Settings and add each business: a name, its Paperless tag and the Actual account that pays for it. Add as many as you need. They are saved in `/data/config.json`.
 
 ## Settings
 
@@ -23,7 +24,6 @@ Transfers between accounts, income and starting balances are skipped.
 | --- | --- |
 | `PAPERLESS_URL` | Base URL of Paperless |
 | `PAPERLESS_TOKEN` | Paperless API token |
-| `BUSINESSES` | `tag\|Actual account name`, separated by `;` |
 | `AMOUNT_FIELD` | Paperless custom field holding the amount, default `amount` |
 | `DATA_DIR` | Where uploads and results are kept, default `/data` |
 

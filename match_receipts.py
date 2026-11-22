@@ -120,7 +120,7 @@ class Paperless:
     def _req(self, url):
         req = urllib.request.Request(url, headers={
             "Authorization": "Token " + self.token,
-            "Accept": "application/json; version=5",
+            "Accept": "application/json",
         })
         return urllib.request.urlopen(req, timeout=60)
 

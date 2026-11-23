@@ -270,12 +270,12 @@ INDEX = HEAD + """
 <button class="alt">Zip and download</button></form>
 <table><tr><th style="width:36px"></th><th>Date</th><th>Payee</th><th>Category</th><th>Receipt</th><th class="n">Amount</th><th></th></tr>
 {% for m in b.rows %}<tr data-s="{{ m.status }}" data-cat="{{ m.category }}" data-payee="{{ m.payee }}"><td>{% if m.status == 'ok' %}<span class="ok" title="Has receipt">&#10003;</span>{% elif m.status == 'personal' %}<span title="Paid from a personal account" style="color:#d9a400">&#9888;</span>{% elif m.status == 'ignored' %}<span class="mut" title="Marked not needed">&ndash;</span>{% else %}<span class="bad" title="Missing receipt">&#10007;</span>{% endif %}</td>
-<td>{{ m.date }}</td><td>{{ m.payee }}</td><td>{{ m.category }}</td><td>{% if m.url %}<a href="{{ m.url }}">{{ m.title }}</a>{% endif %}</td><td class="n">{{ m.amount }}</td>
+<td>{{ m.date }}</td><td>{{ m.payee }}</td><td>{{ m.category }}</td><td>{% if m.url %}<a href="{{ m.url }}" target="_blank" rel="noopener">{{ m.title }}</a>{% endif %}</td><td class="n">{{ m.amount }}</td>
 <td><form method="post" action="{{ url_for('ignore') }}" style="margin:0"><input type="hidden" name="i" value="{{ bi }}"><input type="hidden" name="r" value="{{ loop.index0 }}"><button class="alt" style="padding:2px 8px;font-size:12px">{{ 'Undo' if m.status == 'ignored' else 'Not needed' }}</button></form></td></tr>{% endfor %}
 </table></div>
 {% if b.orphans %}<details class="card"><summary>{{ b.orphans|length }} receipts with no transaction</summary><div class="scroll"><table>
 <tr><th>Date</th><th>Receipt</th><th class="n">Amount</th></tr>
-{% for o in b.orphans %}<tr><td>{{ o.date }}</td><td><a href="{{ o.url }}">{{ o.title }}</a></td><td class="n">{{ o.amount }}</td></tr>{% endfor %}
+{% for o in b.orphans %}<tr><td>{{ o.date }}</td><td><a href="{{ o.url }}" target="_blank" rel="noopener">{{ o.title }}</a></td><td class="n">{{ o.amount }}</td></tr>{% endfor %}
 </table></div></details>{% endif %}
 </section>
 {% endfor %}
@@ -515,7 +515,7 @@ def cpa_html(name, start, end, entries):
     labels = {"ok": "Receipt", "personal": "Paid personally", "missing": "No receipt", "none": "No transaction", "ignored": "Not needed"}
     tr = []
     for st, d, p, c, a, path in entries:
-        link = '<a href="%s">open</a>' % escape(path, quote=True) if path else ""
+        link = '<a href="%s" target="_blank">open</a>' % escape(path, quote=True) if path else ""
         tr.append('<tr data-s="%s"><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td class="n">%s</td><td>%s</td></tr>'
                   % (st, labels.get(st, st), escape(d), escape(p), escape(c), escape(a), link))
     return """<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">

@@ -5,7 +5,9 @@ import io
 import json
 import os
 import re
+import tempfile
 import threading
+import zipfile
 import time
 
 from flask import Flask, Response, redirect, render_template_string, request, url_for
@@ -187,7 +189,10 @@ INDEX = HEAD + """
 {% if not businesses %}<div class="card">No businesses yet. <a href="{{ url_for('settings') }}">Add one in Settings.</a></div>{% endif %}
 {% if r %}
 <div class="mut">Export {{ r.export }}, newest transaction {{ r.newest_transaction or 'unknown' }}. Checked {{ r.ran_at }}.</div>
+<div class="row" style="margin:14px 0 0"><label style="margin:0">Viewing</label>
+<select id="biz">{% for b in r.businesses %}<option value="{{ loop.index0 }}">{{ b.name }}</option>{% endfor %}</select></div>
 {% for b in r.businesses %}{% set bi = loop.index0 %}
+<section data-sec="{{ bi }}">
 <h2>{{ b.name }}</h2>
 <div class="mut">{{ b.rows|selectattr('status','equalto','ok')|list|length }} with receipt, <span class="{{ 'bad' if b.missing else 'ok' }}">{{ b.missing|length }} missing</span>, {{ b.paid_personal|length }} paid personally</div>
 <div class="card scroll" data-biz>
@@ -198,6 +203,12 @@ INDEX = HEAD + """
 <button type="button" class="alt f" data-f="personal">Paid personally</button>
 <input class="q" placeholder="Search" style="margin-left:auto;width:150px">
 <a href="{{ url_for('download', i=bi) }}">CSV</a></div>
+<form class="row" method="get" action="{{ url_for('export_docs') }}" style="margin-bottom:8px">
+<input type="hidden" name="i" value="{{ bi }}">
+<span class="mut">Download documents</span>
+<input type="date" name="start" value="{{ r.year }}-01-01" required>
+<input type="date" name="end" value="{{ r.year }}-12-31" required>
+<button class="alt">Zip</button></form>
 <table><tr><th style="width:36px"></th><th>Date</th><th>Payee</th><th>Receipt</th><th class="n">Amount</th></tr>
 {% for m in b.rows %}<tr data-s="{{ m.status }}"><td>{% if m.status == 'ok' %}<span class="ok" title="Has receipt">&#10003;</span>{% elif m.status == 'personal' %}<span title="Paid from a personal account" style="color:#d9a400">&#9888;</span>{% else %}<span class="bad" title="Missing receipt">&#10007;</span>{% endif %}</td>
 <td>{{ m.date }}</td><td>{{ m.payee }}</td><td>{% if m.url %}<a href="{{ m.url }}">{{ m.title }}</a>{% endif %}</td><td class="n">{{ m.amount }}</td></tr>{% endfor %}
@@ -206,9 +217,15 @@ INDEX = HEAD + """
 <tr><th>Date</th><th>Receipt</th><th class="n">Amount</th></tr>
 {% for o in b.orphans %}<tr><td>{{ o.date }}</td><td><a href="{{ o.url }}">{{ o.title }}</a></td><td class="n">{{ o.amount }}</td></tr>{% endfor %}
 </table></div></details>{% endif %}
+</section>
 {% endfor %}
 {% elif businesses %}<div class="card mut">Nothing yet. Export from Actual and upload the CSV.</div>{% endif %}
 <script>
+(function(){var sel=document.getElementById('biz');if(!sel)return;
+  function show(){document.querySelectorAll('[data-sec]').forEach(function(x){x.style.display=x.dataset.sec===sel.value?'':'none';});
+    try{localStorage.setItem('pt-biz',sel.value);}catch(e){}}
+  try{var v=localStorage.getItem('pt-biz');if(v&&sel.querySelector('option[value="'+v+'"]'))sel.value=v;}catch(e){}
+  sel.onchange=show;show();})();
 document.querySelectorAll('[data-biz]').forEach(function(box){
   var f='all', q='';
   function apply(){box.querySelectorAll('tr[data-s]').forEach(function(tr){
@@ -338,6 +355,40 @@ def download(i):
         w.writerow([m["status"], m["date"], m["payee"], m["amount"], m["title"], m["url"]])
     return Response(buf.getvalue(), mimetype="text/csv", headers={
         "Content-Disposition": "attachment; filename=receipts-%s-%s.csv" % (slug(b["name"]), r["year"])})
+
+
+@app.get("/export")
+def export_docs():
+    items = load_config()
+    try:
+        b = items[int(request.args.get("i", ""))]
+        start = dt.date.fromisoformat(request.args.get("start", ""))
+        end = dt.date.fromisoformat(request.args.get("end", ""))
+    except (ValueError, IndexError):
+        return redirect(url_for("index", msg="Pick a business and valid dates."))
+    try:
+        pl = mr.Paperless(PL_URL, PL_TOKEN)
+        docs = [d for d in mr.load_receipts(pl, None, b["tag"], AMOUNT_FIELD) if start <= d["created"] <= end]
+        tmp = tempfile.SpooledTemporaryFile(max_size=50 * 1024 * 1024)
+        index = io.StringIO()
+        w = csv.writer(index)
+        w.writerow(["file", "date", "title", "correspondent", "amount"])
+        with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as z:
+            for d in sorted(docs, key=lambda x: x["created"]):
+                body, name = pl.download(d["id"])
+                name = "%s_%d_%s" % (d["created"], d["id"], re.sub(r"[^A-Za-z0-9._-]+", "-", name))
+                z.writestr(name, body)
+                w.writerow([name, d["created"], d["title"], d["correspondent"],
+                            "" if d["cents"] is None else "%.2f" % (d["cents"] / 100)])
+            z.writestr("index.csv", index.getvalue())
+    except Exception as e:
+        return redirect(url_for("index", msg="Export failed: %s" % e))
+    if not docs:
+        return redirect(url_for("index", msg="No documents with that tag in that period."))
+    tmp.seek(0)
+    fn = "%s_%s_to_%s.zip" % (slug(b["name"]).lower(), start, end)
+    return Response(tmp, mimetype="application/zip",
+                    headers={"Content-Disposition": "attachment; filename=" + fn})
 
 
 @app.get("/health")

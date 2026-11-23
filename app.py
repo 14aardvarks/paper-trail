@@ -130,7 +130,7 @@ def run_all(year=None):
                     d = by_doc[pres[t["id"]][0]]
                     used.add(d["id"])
                     paid_personal.append({"date": str(t["date"]), "amount": "%.2f" % (t["signed"] / 100),
-                                          "payee": t["payee"], "title": d["title"],
+                                          "payee": t["payee"], "category": t["category"], "title": d["title"],
                                           "url": "%s/documents/%d/details" % (PL_URL, d["id"])})
         for t in txns:
             newest = max(newest, t["date"]) if newest else t["date"]
@@ -144,7 +144,7 @@ def run_all(year=None):
                 r.update(status="ok", title=d["title"], url="%s/documents/%d/details" % (PL_URL, d["id"]))
             rows.append(r)
         for p in paid_personal:
-            rows.append({"date": p["date"], "payee": p["payee"], "amount": p["amount"], "category": "",
+            rows.append({"date": p["date"], "payee": p["payee"], "amount": p["amount"], "category": p.get("category", ""),
                          "status": "personal", "title": p["title"], "url": p["url"]})
         rows.sort(key=lambda x: x["date"])
         out["businesses"].append({
@@ -174,6 +174,12 @@ def load_results():
 
 # ---------- pages ----------
 
+LOGO = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#2f6f3e"/>'
+        '<path d="M18 10h28v44l-5-3-4.5 3-4.5-3-4.5 3-4.5-3-5 3z" fill="#fff"/>'
+        '<path d="M24 22h16M24 30h16M24 38h9" stroke="#2f6f3e" stroke-width="3" stroke-linecap="round"/>'
+        '<circle cx="46" cy="44" r="11" fill="#6fbf80" stroke="#2f6f3e" stroke-width="3"/>'
+        '<path d="M40.5 44l4 4 7-8" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/></svg>')
+
 CSS = """
 :root{--bg:#fff;--fg:#1d2327;--mut:#5d6870;--line:#dde2e6;--card:#f6f8f9;--acc:#2f6f3e;--bad:#b3261e}
 @media (prefers-color-scheme:dark){:root{--bg:#121516;--fg:#e6eaec;--mut:#9aa6ad;--line:#2b3236;--card:#1a1f21;--acc:#6fbf80;--bad:#f2867f}}
@@ -192,8 +198,9 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}.bad{color:var(--ba
 
 HEAD = """<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Paper Trail</title>
+<link rel="icon" href="/logo.svg" type="image/svg+xml">
 <style>{{ css|safe }}</style></head><body><main>
-<h1>Paper Trail</h1>
+<h1 style="display:flex;align-items:center;gap:10px"><img src="/logo.svg" alt="" width="34" height="34">Paper Trail</h1>
 <nav><a href="{{ url_for('index') }}">Check</a><a href="{{ url_for('settings') }}">Settings</a></nav>
 {% if error %}<div class="err">{{ error }}</div>{% endif %}
 {% if msg %}<div class="card ok">{{ msg }}</div>{% endif %}
@@ -228,13 +235,13 @@ INDEX = HEAD + """
 <a href="{{ url_for('download', i=bi) }}">CSV</a></div>
 <form class="row" method="get" action="{{ url_for('export_docs') }}" style="margin-bottom:8px">
 <input type="hidden" name="i" value="{{ bi }}">
-<span class="mut">Download documents</span>
+<span class="mut">Download list and documents</span>
 <input type="date" name="start" value="{{ r.year }}-01-01" required>
 <input type="date" name="end" value="{{ r.year }}-12-31" required>
 <button class="alt">Zip</button></form>
-<table><tr><th style="width:36px"></th><th>Date</th><th>Payee</th><th>Receipt</th><th class="n">Amount</th></tr>
+<table><tr><th style="width:36px"></th><th>Date</th><th>Payee</th><th>Category</th><th>Receipt</th><th class="n">Amount</th></tr>
 {% for m in b.rows %}<tr data-s="{{ m.status }}"><td>{% if m.status == 'ok' %}<span class="ok" title="Has receipt">&#10003;</span>{% elif m.status == 'personal' %}<span title="Paid from a personal account" style="color:#d9a400">&#9888;</span>{% else %}<span class="bad" title="Missing receipt">&#10007;</span>{% endif %}</td>
-<td>{{ m.date }}</td><td>{{ m.payee }}</td><td>{% if m.url %}<a href="{{ m.url }}">{{ m.title }}</a>{% endif %}</td><td class="n">{{ m.amount }}</td></tr>{% endfor %}
+<td>{{ m.date }}</td><td>{{ m.payee }}</td><td>{{ m.category }}</td><td>{% if m.url %}<a href="{{ m.url }}">{{ m.title }}</a>{% endif %}</td><td class="n">{{ m.amount }}</td></tr>{% endfor %}
 </table></div>
 {% if b.orphans %}<details class="card"><summary>{{ b.orphans|length }} receipts with no transaction</summary><div class="scroll"><table>
 <tr><th>Date</th><th>Receipt</th><th class="n">Amount</th></tr>
@@ -420,45 +427,108 @@ def download(i):
     b = r["businesses"][i]
     buf = io.StringIO()
     w = csv.writer(buf)
-    w.writerow(["status", "date", "payee", "amount", "receipt", "link"])
+    w.writerow(["status", "date", "payee", "category", "amount", "receipt", "link"])
     for m in b["rows"]:
-        w.writerow([m["status"], m["date"], m["payee"], m["amount"], m["title"], m["url"]])
+        w.writerow([m["status"], m["date"], m["payee"], m["category"], m["amount"], m["title"], m["url"]])
     return Response(buf.getvalue(), mimetype="text/csv", headers={
         "Content-Disposition": "attachment; filename=receipts-%s-%s.csv" % (slug(b["name"]), r["year"])})
 
 
+def cpa_html(name, start, end, entries):
+    from html import escape
+    labels = {"ok": "Receipt", "personal": "Paid personally", "missing": "No receipt", "none": "No transaction"}
+    tr = []
+    for st, d, p, c, a, path in entries:
+        link = '<a href="%s">open</a>' % escape(path, quote=True) if path else ""
+        tr.append('<tr data-s="%s"><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td class="n">%s</td><td>%s</td></tr>'
+                  % (st, labels.get(st, st), escape(d), escape(p), escape(c), escape(a), link))
+    return """<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>%(n)s receipts</title><style>
+body{font:15px/1.5 system-ui,sans-serif;margin:0;padding:20px;color:#1d2327}h1{font-size:20px;margin:0}
+.m{color:#5d6870;margin:2px 0 14px}.bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+button,input{font:inherit;padding:6px 10px;border:1px solid #c9d0d5;border-radius:8px;background:#fff}
+button.on{background:#2f6f3e;color:#fff;border-color:#2f6f3e}table{border-collapse:collapse;width:100%%}
+th,td{text-align:left;padding:6px 8px;border-bottom:1px solid #e3e7ea}td.n,th.n{text-align:right}
+th{cursor:pointer;position:sticky;top:0;background:#f6f8f9}tr[data-s=missing] td:first-child{color:#b3261e}
+tr[data-s=ok] td:first-child{color:#2f6f3e}a{color:#2f6f3e}</style></head><body>
+<h1>%(n)s</h1><div class="m">%(s)s to %(e)s. %(c)d items. Click a column heading to sort.</div>
+<div class="bar"><button class="on" data-f="all">All</button><button data-f="ok">Receipt</button>
+<button data-f="missing">No receipt</button><button data-f="personal">Paid personally</button><button data-f="none">No transaction</button>
+<input id="q" placeholder="Search" style="margin-left:auto"></div>
+<table id="t"><thead><tr><th>Status</th><th>Date</th><th>Payee</th><th>Category</th><th class="n">Amount</th><th>File</th></tr></thead>
+<tbody>%(rows)s</tbody></table>
+<script>
+var f='all',q='',tb=document.querySelector('#t tbody');
+function ap(){tb.querySelectorAll('tr').forEach(function(r){r.style.display=((f==='all'||r.dataset.s===f)&&(!q||r.textContent.toLowerCase().indexOf(q)>-1))?'':'none'})}
+document.querySelectorAll('.bar button').forEach(function(b){b.onclick=function(){f=b.dataset.f;document.querySelectorAll('.bar button').forEach(function(x){x.classList.toggle('on',x===b)});ap()}});
+document.getElementById('q').oninput=function(e){q=e.target.value.toLowerCase();ap()};
+document.querySelectorAll('th').forEach(function(h,i){var asc=1;h.onclick=function(){asc=-asc;
+ var rs=[].slice.call(tb.querySelectorAll('tr'));rs.sort(function(a,b){var x=a.cells[i].textContent,y=b.cells[i].textContent;
+ var nx=parseFloat(x),ny=parseFloat(y);if(i===4)return (nx-ny)*asc;return x.localeCompare(y)*asc});rs.forEach(function(r){tb.appendChild(r)})}});
+</script></body></html>""" % {"n": escape(name), "s": start, "e": end, "c": len(entries), "rows": "".join(tr)}
+
+
+def doc_id(url):
+    m = re.search(r"/documents/(\d+)/", url or "")
+    return int(m.group(1)) if m else None
+
+
 @app.get("/export")
 def export_docs():
-    items = load_config()
+    r = load_results()
     try:
-        b = items[int(request.args.get("i", ""))]
-        start = dt.date.fromisoformat(request.args.get("start", ""))
-        end = dt.date.fromisoformat(request.args.get("end", ""))
-    except (ValueError, IndexError):
-        return redirect(url_for("index", msg="Pick a business and valid dates."))
+        b = r["businesses"][int(request.args.get("i", ""))]
+        start = request.args.get("start", "")
+        end = request.args.get("end", "")
+        dt.date.fromisoformat(start)
+        dt.date.fromisoformat(end)
+    except (TypeError, KeyError, ValueError, IndexError):
+        return redirect(url_for("index", msg="Run a check first, then pick valid dates."))
+    rows = [x for x in b["rows"] if start <= x["date"] <= end]
+    orphans = [o for o in b["orphans"] if start <= o["date"] <= end]
+    if not rows and not orphans:
+        return redirect(url_for("index", msg="Nothing in that period."))
     try:
         pl = mr.Paperless(PL_URL, PL_TOKEN)
-        docs = [d for d in mr.load_receipts(pl, None, b["tag"], AMOUNT_FIELD) if start <= d["created"] <= end]
         tmp = tempfile.SpooledTemporaryFile(max_size=50 * 1024 * 1024)
         index = io.StringIO()
         w = csv.writer(index)
-        w.writerow(["file", "date", "title", "correspondent", "amount"])
+        w.writerow(["status", "date", "payee", "category", "amount", "receipt file"])
+        entries = []
         with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as z:
-            for d in sorted(docs, key=lambda x: x["created"]):
-                body, name = pl.download(d["id"])
-                name = "%s_%d_%s" % (d["created"], d["id"], re.sub(r"[^A-Za-z0-9._-]+", "-", name))
-                z.writestr(name, body)
-                w.writerow([name, d["created"], d["title"], d["correspondent"],
-                            "" if d["cents"] is None else "%.2f" % (d["cents"] / 100)])
-            z.writestr("index.csv", index.getvalue())
+            for x in rows:
+                path = ""
+                did = doc_id(x["url"])
+                if did:
+                    body, name = pl.download(did)
+                    ext = os.path.splitext(name)[1] or ".pdf"
+                    path = "receipts/%s/%s_%s_%s%s" % (slug(x["category"] or "uncategorized").lower(), x["date"],
+                                                      slug(x["payee"]).lower(), x["amount"].replace("-", ""), ext)
+                    z.writestr(path, body)
+                w.writerow([x["status"], x["date"], x["payee"], x["category"], x["amount"], path])
+                entries.append((x["status"], x["date"], x["payee"], x["category"], x["amount"], path))
+            for o in orphans:
+                did = doc_id(o["url"])
+                if not did:
+                    continue
+                body, name = pl.download(did)
+                path = "no-transaction/%s_%d_%s" % (o["date"], did, slug(name))
+                z.writestr(path, body)
+                w.writerow(["no transaction", o["date"], o["correspondent"], "", o["amount"], path])
+                entries.append(("none", o["date"], o["correspondent"], "", o["amount"], path))
+            z.writestr("list.csv", index.getvalue())
+            z.writestr("index.html", cpa_html(b["name"], start, end, entries))
     except Exception as e:
         return redirect(url_for("index", msg="Export failed: %s" % e))
-    if not docs:
-        return redirect(url_for("index", msg="No documents with that tag in that period."))
     tmp.seek(0)
     fn = "%s_%s_to_%s.zip" % (slug(b["name"]).lower(), start, end)
     return Response(tmp, mimetype="application/zip",
                     headers={"Content-Disposition": "attachment; filename=" + fn})
+
+
+@app.get("/logo.svg")
+def logo():
+    return Response(LOGO, mimetype="image/svg+xml", headers={"Cache-Control": "max-age=86400"})
 
 
 @app.get("/health")

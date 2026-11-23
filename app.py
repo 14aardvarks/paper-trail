@@ -109,13 +109,24 @@ def run_all(year=None):
                                           "url": "%s/documents/%d/details" % (PL_URL, d["id"])})
         for t in txns:
             newest = max(newest, t["date"]) if newest else t["date"]
+        byid = {d["id"]: d for d in docs}
+        rows = []
+        for t in txns:
+            r = {"date": str(t["date"]), "payee": t["payee"], "amount": "%.2f" % (t["signed"] / 100),
+                 "category": t["category"], "status": "missing", "title": "", "url": ""}
+            if t["id"] in res:
+                d = byid[res[t["id"]][0]]
+                r.update(status="ok", title=d["title"], url="%s/documents/%d/details" % (PL_URL, d["id"]))
+            rows.append(r)
+        for p in paid_personal:
+            rows.append({"date": p["date"], "payee": p["payee"], "amount": p["amount"], "category": "",
+                         "status": "personal", "title": p["title"], "url": p["url"]})
+        rows.sort(key=lambda x: x["date"])
         out["businesses"].append({
             "name": b["name"], "tag": b["tag"], "account": b["account"],
             "matched": len(res), "docs": len(docs), "personal": b.get("personal", ""),
-            "paid_personal": paid_personal,
-            "missing": [{"date": str(t["date"]), "amount": "%.2f" % (t["signed"] / 100),
-                         "payee": t["payee"], "category": t["category"]}
-                        for t in sorted(txns, key=lambda x: x["date"]) if t["id"] not in res],
+            "paid_personal": paid_personal, "rows": rows,
+            "missing": [r for r in rows if r["status"] == "missing"],
             "orphans": [{"date": str(d["created"]), "title": d["title"],
                          "correspondent": d["correspondent"],
                          "amount": "" if d["cents"] is None else "%.2f" % (d["cents"] / 100),
@@ -151,7 +162,7 @@ button.alt{background:transparent;color:var(--fg);border:1px solid var(--line)}
 table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)}
 td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}.bad{color:var(--bad)}.ok{color:var(--acc)}
 .err{background:#f9dedc;color:#410e0b;padding:10px 12px;border-radius:8px;margin:12px 0}a{color:var(--acc)}
-.scroll{overflow-x:auto}label{display:block;font-size:13px;color:var(--mut);margin:8px 0 2px}
+.scroll{overflow-x:auto}button.on{background:var(--acc);color:#fff;border-color:var(--acc)}label{display:block;font-size:13px;color:var(--mut);margin:8px 0 2px}
 """
 
 HEAD = """<!doctype html><html lang="en"><head><meta charset="utf-8">
@@ -176,22 +187,38 @@ INDEX = HEAD + """
 {% if not businesses %}<div class="card">No businesses yet. <a href="{{ url_for('settings') }}">Add one in Settings.</a></div>{% endif %}
 {% if r %}
 <div class="mut">Export {{ r.export }}, newest transaction {{ r.newest_transaction or 'unknown' }}. Checked {{ r.ran_at }}.</div>
-{% for b in r.businesses %}
+{% for b in r.businesses %}{% set bi = loop.index0 %}
 <h2>{{ b.name }}</h2>
-<div class="mut">{{ b.matched }} matched, <span class="{{ 'bad' if b.missing else 'ok' }}">{{ b.missing|length }} missing a receipt</span>, tag {{ b.tag }}, account {{ b.account }}</div>
-{% if b.missing %}<div class="card scroll"><table><tr><th>Date</th><th>Payee</th><th class="n">Amount</th></tr>
-{% for m in b.missing %}<tr><td>{{ m.date }}</td><td>{{ m.payee }}</td><td class="n">{{ m.amount }}</td></tr>{% endfor %}</table>
-<div style="margin-top:8px"><a href="{{ url_for('download', i=loop.index0) }}">Download CSV</a></div></div>{% endif %}
-{% if b.paid_personal %}<div class="card scroll"><b>{{ b.paid_personal|length }} paid from a personal account</b> (reimburse or log as owner contribution)<table>
-<tr><th>Date</th><th>Receipt</th><th class="n">Amount</th></tr>
-{% for p in b.paid_personal %}<tr><td>{{ p.date }}</td><td><a href="{{ p.url }}">{{ p.title }}</a></td><td class="n">{{ p.amount }}</td></tr>{% endfor %}
-</table></div>{% endif %}
+<div class="mut">{{ b.rows|selectattr('status','equalto','ok')|list|length }} with receipt, <span class="{{ 'bad' if b.missing else 'ok' }}">{{ b.missing|length }} missing</span>, {{ b.paid_personal|length }} paid personally</div>
+<div class="card scroll" data-biz>
+<div class="row" style="margin-bottom:8px">
+<button type="button" class="alt f on" data-f="all">All</button>
+<button type="button" class="alt f" data-f="missing">Missing</button>
+<button type="button" class="alt f" data-f="ok">Has receipt</button>
+<button type="button" class="alt f" data-f="personal">Paid personally</button>
+<input class="q" placeholder="Search" style="margin-left:auto;width:150px">
+<a href="{{ url_for('download', i=bi) }}">CSV</a></div>
+<table><tr><th style="width:36px"></th><th>Date</th><th>Payee</th><th>Receipt</th><th class="n">Amount</th></tr>
+{% for m in b.rows %}<tr data-s="{{ m.status }}"><td>{% if m.status == 'ok' %}<span class="ok" title="Has receipt">&#10003;</span>{% elif m.status == 'personal' %}<span title="Paid from a personal account" style="color:#d9a400">&#9888;</span>{% else %}<span class="bad" title="Missing receipt">&#10007;</span>{% endif %}</td>
+<td>{{ m.date }}</td><td>{{ m.payee }}</td><td>{% if m.url %}<a href="{{ m.url }}">{{ m.title }}</a>{% endif %}</td><td class="n">{{ m.amount }}</td></tr>{% endfor %}
+</table></div>
 {% if b.orphans %}<details class="card"><summary>{{ b.orphans|length }} receipts with no transaction</summary><div class="scroll"><table>
 <tr><th>Date</th><th>Receipt</th><th class="n">Amount</th></tr>
 {% for o in b.orphans %}<tr><td>{{ o.date }}</td><td><a href="{{ o.url }}">{{ o.title }}</a></td><td class="n">{{ o.amount }}</td></tr>{% endfor %}
 </table></div></details>{% endif %}
 {% endfor %}
 {% elif businesses %}<div class="card mut">Nothing yet. Export from Actual and upload the CSV.</div>{% endif %}
+<script>
+document.querySelectorAll('[data-biz]').forEach(function(box){
+  var f='all', q='';
+  function apply(){box.querySelectorAll('tr[data-s]').forEach(function(tr){
+    var ok=(f==='all'||tr.dataset.s===f)&&(!q||tr.textContent.toLowerCase().indexOf(q)>-1);
+    tr.style.display=ok?'':'none';});}
+  box.querySelectorAll('.f').forEach(function(b){b.onclick=function(){
+    f=b.dataset.f;box.querySelectorAll('.f').forEach(function(x){x.classList.toggle('on',x===b);});apply();};});
+  box.querySelector('.q').oninput=function(e){q=e.target.value.toLowerCase();apply();};
+});
+</script>
 </main></body></html>"""
 
 SETTINGS = HEAD + """
@@ -306,11 +333,11 @@ def download(i):
     b = r["businesses"][i]
     buf = io.StringIO()
     w = csv.writer(buf)
-    w.writerow(["date", "amount", "payee", "category"])
-    for m in b["missing"]:
-        w.writerow([m["date"], m["amount"], m["payee"], m["category"]])
+    w.writerow(["status", "date", "payee", "amount", "receipt", "link"])
+    for m in b["rows"]:
+        w.writerow([m["status"], m["date"], m["payee"], m["amount"], m["title"], m["url"]])
     return Response(buf.getvalue(), mimetype="text/csv", headers={
-        "Content-Disposition": "attachment; filename=missing-%s-%s.csv" % (slug(b["name"]), r["year"])})
+        "Content-Disposition": "attachment; filename=receipts-%s-%s.csv" % (slug(b["name"]), r["year"])})
 
 
 @app.get("/health")

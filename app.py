@@ -205,11 +205,17 @@ SETTINGS = HEAD + """
 <label>Name</label><input name="name" required placeholder="Rental property">
 <label>Paperless tag</label><input name="tag" list="tags" required>
 <datalist id="tags">{% for t in tags %}<option value="{{ t }}">{% endfor %}</datalist>
-<label>Actual accounts (checking, savings, etc. separate with ;)</label><input name="account" list="accts" required placeholder="Checking;Savings">
-<datalist id="accts">{% for a in accounts %}<option value="{{ a }}">{% endfor %}</datalist>
-<label>Personal accounts that sometimes pay for it (optional, separate with ;)</label><input name="personal" list="accts">
+{% if accounts %}
+<label>Actual accounts that belong to this business (tick all)</label>
+{% for a in accounts %}<div><label style="display:inline;color:var(--fg)"><input type="checkbox" name="account" value="{{ a }}"> {{ a }}</label></div>{% endfor %}
+<label>Personal accounts that sometimes pay for it (optional)</label>
+{% for a in accounts %}<div><label style="display:inline;color:var(--fg)"><input type="checkbox" name="personal" value="{{ a }}"> {{ a }}</label></div>{% endfor %}
+{% else %}
+<label>Actual accounts (separate with ;)</label><input name="account" required placeholder="Checking;Savings">
+<label>Personal accounts that sometimes pay for it (optional, separate with ;)</label><input name="personal">
+<div class="mut" style="margin-top:8px">Upload an Actual export first and your accounts will show up as checkboxes.</div>
+{% endif %}
 <div style="margin-top:12px"><button>Add business</button></div>
-{% if not accounts %}<div class="mut" style="margin-top:8px">Upload an Actual export first and your account names will show up as suggestions.</div>{% endif %}
 </form>
 </main></body></html>"""
 
@@ -242,12 +248,12 @@ def settings():
 def add():
     name = request.form.get("name", "").strip()
     tag = request.form.get("tag", "").strip()
-    account = request.form.get("account", "").strip()
+    account = ";".join(x.strip() for x in request.form.getlist("account") if x.strip())
     if not (name and tag and account):
         return page(SETTINGS, error="Fill in all three fields.", tags=paperless_tags(), accounts=export_accounts()), 400
     items = load_config()
     items.append({"name": name, "tag": tag, "account": account,
-                  "personal": request.form.get("personal", "").strip()})
+                  "personal": ";".join(x.strip() for x in request.form.getlist("personal") if x.strip())})
     save_config(items)
     return redirect(url_for("settings", msg="Added %s." % name))
 

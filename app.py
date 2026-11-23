@@ -79,9 +79,9 @@ def run_all(year=None):
     path = latest_export()
     businesses = load_config()
     if not path:
-        raise RuntimeError("No Actual export uploaded yet")
+        raise RuntimeError("No bank export uploaded yet")
     if not businesses:
-        raise RuntimeError("Add a business in Settings first")
+        raise RuntimeError("Add an account in Settings first")
     if not PL_TOKEN:
         raise RuntimeError("PAPERLESS_TOKEN is not set")
     year = year or dt.date.today().year
@@ -177,7 +177,7 @@ HEAD = """<!doctype html><html lang="en"><head><meta charset="utf-8">
 """
 
 INDEX = HEAD + """
-<div class="mut">Paperless receipts matched against your Actual export.</div>
+<div class="mut">Paperless receipts matched against your bank export.</div>
 <div class="card">
 <form class="row" method="post" action="{{ url_for('upload') }}" enctype="multipart/form-data">
 <input type="file" name="file" accept=".csv" required>
@@ -186,7 +186,7 @@ INDEX = HEAD + """
 <form class="row" style="margin-top:8px" method="post" action="{{ url_for('rerun') }}">
 <input type="hidden" name="year" value="{{ year }}"><button class="alt">Re-run on latest export</button></form>
 </div>
-{% if not businesses %}<div class="card">No businesses yet. <a href="{{ url_for('settings') }}">Add one in Settings.</a></div>{% endif %}
+{% if not businesses %}<div class="card">No accounts yet. <a href="{{ url_for('settings') }}">Add one in Settings.</a></div>{% endif %}
 {% if r %}
 <div class="mut">Export {{ r.export }}, newest transaction {{ r.newest_transaction or 'unknown' }}. Checked {{ r.ran_at }}.</div>
 <div class="row" style="margin:14px 0 0"><label style="margin:0">Viewing</label>
@@ -219,7 +219,7 @@ INDEX = HEAD + """
 </table></div></details>{% endif %}
 </section>
 {% endfor %}
-{% elif businesses %}<div class="card mut">Nothing yet. Export from Actual and upload the CSV.</div>{% endif %}
+{% elif businesses %}<div class="card mut">Nothing yet. Export your transactions and upload the CSV.</div>{% endif %}
 <script>
 (function(){var sel=document.getElementById('biz');if(!sel)return;
   function show(){document.querySelectorAll('[data-sec]').forEach(function(x){x.style.display=x.dataset.sec===sel.value?'':'none';});
@@ -239,27 +239,30 @@ document.querySelectorAll('[data-biz]').forEach(function(box){
 </main></body></html>"""
 
 SETTINGS = HEAD + """
-<h2>Businesses</h2>
-<div class="mut">Each business is a Paperless tag plus the Actual account that pays for it. Add as many as you need.</div>
-{% if businesses %}<div class="card scroll"><table><tr><th>Name</th><th>Paperless tag</th><th>Actual account</th><th>Personal accounts</th><th></th></tr>
-{% for b in businesses %}<tr><td>{{ b.name }}</td><td>{{ b.tag }}</td><td>{{ b.account }}</td><td>{{ b.personal }}</td>
-<td><form method="post" action="{{ url_for('delete', i=loop.index0) }}"><button class="alt">Remove</button></form></td></tr>{% endfor %}
+<h2>Accounts</h2>
+<div class="mut">Each account here is a group you review on the Check page: a name, the Paperless tag its receipts carry, and the bank accounts whose transactions belong to it.</div>
+{% if businesses %}<div class="card scroll"><table><tr><th>Name</th><th>Paperless tag</th><th>Bank accounts</th><th>Also checked</th><th></th></tr>
+{% for b in businesses %}<tr><td>{{ b.name }}</td><td>{{ b.tag }}</td><td>{{ b.account.replace(';', ', ') }}</td><td>{{ b.personal.replace(';', ', ') }}</td>
+<td style="white-space:nowrap"><a href="{{ url_for('settings', edit=loop.index0) }}">Edit</a>
+<form method="post" action="{{ url_for('delete', i=loop.index0) }}" style="display:inline" onsubmit="return confirm('Remove this account?')"><button class="alt">Remove</button></form></td></tr>{% endfor %}
 </table></div>{% endif %}
-<form class="card" method="post" action="{{ url_for('add') }}">
-<label>Name</label><input name="name" required placeholder="Rental property">
-<label>Paperless tag</label><input name="tag" list="tags" required>
+<h2>{{ 'Edit account' if e else 'Add account' }}</h2>
+<form class="card" method="post" action="{{ url_for('save', i=edit) if e else url_for('add') }}">
+<label>Name</label><input name="name" required value="{{ e.name if e else '' }}" placeholder="Rental property">
+<label>Paperless tag on its receipts</label><input name="tag" list="tags" required value="{{ e.tag if e else '' }}">
 <datalist id="tags">{% for t in tags %}<option value="{{ t }}">{% endfor %}</datalist>
 {% if accounts %}
-<label>Actual accounts that belong to this business (tick all)</label>
-{% for a in accounts %}<div><label style="display:inline;color:var(--fg)"><input type="checkbox" name="account" value="{{ a }}"> {{ a }}</label></div>{% endfor %}
-<label>Personal accounts that sometimes pay for it (optional)</label>
-{% for a in accounts %}<div><label style="display:inline;color:var(--fg)"><input type="checkbox" name="personal" value="{{ a }}"> {{ a }}</label></div>{% endfor %}
+<label>Bank accounts for this one (tick every one whose transactions should have receipts, such as checking and savings)</label>
+{% for a in accounts %}<div><label style="display:inline;color:var(--fg)"><input type="checkbox" name="account" value="{{ a }}" {{ 'checked' if e and a in e.account.split(';') }}> {{ a }}</label></div>{% endfor %}
+<label>Also look for receipts in these accounts (optional, for things you paid from a personal account)</label>
+{% for a in accounts %}<div><label style="display:inline;color:var(--fg)"><input type="checkbox" name="personal" value="{{ a }}" {{ 'checked' if e and a in e.personal.split(';') }}> {{ a }}</label></div>{% endfor %}
 {% else %}
-<label>Actual accounts (separate with ;)</label><input name="account" required placeholder="Checking;Savings">
-<label>Personal accounts that sometimes pay for it (optional, separate with ;)</label><input name="personal">
-<div class="mut" style="margin-top:8px">Upload an Actual export first and your accounts will show up as checkboxes.</div>
+<label>Bank accounts (separate with ;)</label><input name="account" required value="{{ e.account if e else '' }}" placeholder="Checking;Savings">
+<label>Also look for receipts in these accounts (optional, separate with ;)</label><input name="personal" value="{{ e.personal if e else '' }}">
+<div class="mut" style="margin-top:8px">Upload your bank export on the Check page and your bank accounts will show up as tickboxes.</div>
 {% endif %}
-<div style="margin-top:12px"><button>Add business</button></div>
+<div style="margin-top:12px" class="row"><button>{{ 'Save' if e else 'Add account' }}</button>
+{% if e %}<a href="{{ url_for('settings') }}">Cancel</a>{% endif %}</div>
 </form>
 </main></body></html>"""
 
@@ -283,23 +286,45 @@ def index():
     return page(INDEX, msg=request.args.get("msg"))
 
 
+def form_entry():
+    return {"name": request.form.get("name", "").strip(), "tag": request.form.get("tag", "").strip(),
+            "account": ";".join(x.strip() for x in request.form.getlist("account") if x.strip()),
+            "personal": ";".join(x.strip() for x in request.form.getlist("personal") if x.strip())}
+
+
 @app.get("/settings")
 def settings():
-    return page(SETTINGS, msg=request.args.get("msg"), tags=paperless_tags(), accounts=export_accounts())
+    items = load_config()
+    edit = request.args.get("edit", type=int)
+    e = items[edit] if edit is not None and 0 <= edit < len(items) else None
+    return page(SETTINGS, msg=request.args.get("msg"), tags=paperless_tags(), accounts=export_accounts(),
+                e=e, edit=edit if e else None)
 
 
 @app.post("/settings/add")
 def add():
-    name = request.form.get("name", "").strip()
-    tag = request.form.get("tag", "").strip()
-    account = ";".join(x.strip() for x in request.form.getlist("account") if x.strip())
-    if not (name and tag and account):
-        return page(SETTINGS, error="Fill in all three fields.", tags=paperless_tags(), accounts=export_accounts()), 400
+    e = form_entry()
+    if not (e["name"] and e["tag"] and e["account"]):
+        return page(SETTINGS, error="Fill in the name, tag and at least one bank account.",
+                    tags=paperless_tags(), accounts=export_accounts(), e=None, edit=None), 400
     items = load_config()
-    items.append({"name": name, "tag": tag, "account": account,
-                  "personal": ";".join(x.strip() for x in request.form.getlist("personal") if x.strip())})
+    items.append(e)
     save_config(items)
-    return redirect(url_for("settings", msg="Added %s." % name))
+    return redirect(url_for("settings", msg="Added %s." % e["name"]))
+
+
+@app.post("/settings/save/<int:i>")
+def save(i):
+    e = form_entry()
+    items = load_config()
+    if not (0 <= i < len(items)):
+        return redirect(url_for("settings"))
+    if not (e["name"] and e["tag"] and e["account"]):
+        return page(SETTINGS, error="Fill in the name, tag and at least one bank account.",
+                    tags=paperless_tags(), accounts=export_accounts(), e=items[i], edit=i), 400
+    items[i] = e
+    save_config(items)
+    return redirect(url_for("settings", msg="Saved %s." % e["name"]))
 
 
 @app.post("/settings/delete/<int:i>")
@@ -315,17 +340,17 @@ def delete(i):
 def upload():
     f = request.files.get("file")
     if not f or not f.filename.lower().endswith(".csv"):
-        return page(INDEX, error="Choose a .csv file exported from Actual."), 400
+        return page(INDEX, error="Choose a .csv file exported from your budget app."), 400
     first = f.stream.read(2048).decode("utf-8-sig", "ignore").split("\n", 1)[0]
     f.stream.seek(0)
     if "Date" not in first or "Amount" not in first:
-        return page(INDEX, error="That doesn't look like an Actual export (missing Date and Amount columns)."), 400
+        return page(INDEX, error="That doesn't look like an bank export (missing Date and Amount columns)."), 400
     name = dt.datetime.now().strftime("%Y%m%d-%H%M%S") + ".csv"
     f.save(os.path.join(EXPORTS, name))
     for old in sorted(glob.glob(os.path.join(EXPORTS, "*.csv")))[:-12]:
         os.remove(old)
     if not load_config():
-        return redirect(url_for("settings", msg="Export saved. Add a business to run the check."))
+        return redirect(url_for("settings", msg="Export saved. Add an account to run the check."))
     try:
         run_all(parse_year())
     except Exception as e:

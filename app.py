@@ -246,7 +246,7 @@ INDEX = HEAD + """
 {% for b in r.businesses %}{% set bi = loop.index0 %}
 <section data-sec="{{ bi }}">
 <h2>{{ b.name }}</h2>
-<div class="mut">{{ b.rows|selectattr('status','equalto','ok')|list|length }} with receipt, <span class="{{ 'bad' if b.missing else 'ok' }}">{{ b.missing|length }} missing</span>, {{ b.paid_personal|length }} paid personally{% set ig = b.rows|selectattr('status','equalto','ignored')|list|length %}{% if ig %}, {{ ig }} not needed{% endif %}</div>
+<div class="mut sum">{{ b.rows|selectattr('status','equalto','ok')|list|length }} with receipt, <span class="{{ 'bad' if b.missing else 'ok' }}">{{ b.missing|length }} missing</span>, {{ b.paid_personal|length }} paid personally{% set ig = b.rows|selectattr('status','equalto','ignored')|list|length %}{% if ig %}, {{ ig }} not needed{% endif %}</div>
 <div class="card scroll" data-biz>
 <div class="row" style="margin-bottom:8px">
 <button type="button" class="alt f on" data-f="all">All</button>
@@ -300,9 +300,20 @@ document.querySelectorAll('[data-biz]').forEach(function(box){
   });
   box.querySelectorAll('.f').forEach(function(b){b.onclick=function(){
     f=b.dataset.f;box.querySelectorAll('.f').forEach(function(x){x.classList.toggle('on',x===b);});apply();};});
-  var cnt={};box.querySelectorAll('tr[data-s]').forEach(function(tr){cnt[tr.dataset.s]=(cnt[tr.dataset.s]||0)+1;});
-  var tot=box.querySelectorAll('tr[data-s]').length;
-  box.querySelectorAll('.f').forEach(function(b){var n=b.dataset.f==='all'?tot:(cnt[b.dataset.f]||0);b.textContent+=' ('+n+')';});
+  box.querySelectorAll('.f').forEach(function(b){b.dataset.l=b.textContent;});
+  function recount(){var cnt={},tot=0;box.querySelectorAll('tr[data-s]').forEach(function(tr){cnt[tr.dataset.s]=(cnt[tr.dataset.s]||0)+1;tot++;});
+    box.querySelectorAll('.f').forEach(function(b){b.textContent=b.dataset.l+' ('+(b.dataset.f==='all'?tot:(cnt[b.dataset.f]||0))+')';});
+    var sm=box.closest('section').querySelector('.sum');
+    if(sm){var m=cnt.missing||0,t=(cnt.ok||0)+' with receipt, '+m+' missing, '+(cnt.personal||0)+' paid personally';
+      if(cnt.ignored)t+=', '+cnt.ignored+' not needed';sm.textContent=t;sm.className='mut sum';}}
+  recount();
+  box.querySelectorAll('form[action$="/ignore"]').forEach(function(fm){fm.addEventListener('submit',function(e){
+    e.preventDefault();var btn=fm.querySelector('button');btn.disabled=true;
+    fetch(fm.action,{method:'POST',body:new FormData(fm),headers:{'X-Requested-With':'fetch'}}).then(function(r){
+      if(!r.ok)throw 0;var tr=fm.closest('tr'),to=tr.dataset.s==='missing'?'ignored':'missing';tr.dataset.s=to;
+      tr.cells[0].innerHTML=to==='ignored'?'<span class="mut" title="Marked not needed">&ndash;</span>':'<span class="bad" title="Missing receipt">&#10007;</span>';
+      btn.textContent=to==='ignored'?'Undo':'Not needed';btn.disabled=false;recount();apply();
+    }).catch(function(){btn.disabled=false;fm.submit();});});});
   box.querySelector('.q').oninput=function(e){q=e.target.value.toLowerCase();apply();};
 });
 </script>
@@ -598,6 +609,8 @@ def ignore():
     b["missing"] = [x for x in b["rows"] if x["status"] == "missing"]
     with lock, open(RESULTS, "w") as f:
         json.dump(r, f)
+    if request.headers.get("X-Requested-With") == "fetch":
+        return "", 204
     return redirect(url_for("index"))
 
 

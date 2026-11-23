@@ -33,17 +33,37 @@ lock = threading.Lock()
 
 # ---------- config and data helpers ----------
 
-def load_config():
+def _read():
     try:
         with open(CONFIG) as f:
-            return json.load(f).get("businesses", [])
+            return json.load(f)
     except (OSError, ValueError):
-        return []
+        return {}
+
+
+def _write(d):
+    with lock, open(CONFIG, "w") as f:
+        json.dump(d, f, indent=2)
+
+
+def load_config():
+    return _read().get("businesses", [])
 
 
 def save_config(items):
-    with lock, open(CONFIG, "w") as f:
-        json.dump({"businesses": items}, f, indent=2)
+    d = _read()
+    d["businesses"] = items
+    _write(d)
+
+
+def saved_banks():
+    return _read().get("bank_accounts", [])
+
+
+def save_banks(items):
+    d = _read()
+    d["bank_accounts"] = sorted(set(items), key=str.lower)
+    _write(d)
 
 
 def latest_export():
@@ -52,15 +72,18 @@ def latest_export():
 
 
 def export_accounts():
+    names = set(saved_banks())
+    for b in load_config():
+        for k in ("account", "personal"):
+            names.update(x.strip() for x in b.get(k, "").split(";") if x.strip())
     path = latest_export()
     if not path:
-        return []
-    names = set()
+        return sorted(names, key=str.lower)
     with open(path, newline="", encoding="utf-8-sig") as f:
         for r in csv.DictReader(f):
             if r.get("Account"):
                 names.add(r["Account"])
-    return sorted(names)
+    return sorted(names, key=str.lower)
 
 
 def paperless_tags():
@@ -239,6 +262,13 @@ document.querySelectorAll('[data-biz]').forEach(function(box){
 </main></body></html>"""
 
 SETTINGS = HEAD + """
+<h2>Bank accounts</h2>
+<div class="mut">Names must match the Account column in your Actual export. Accounts found in an uploaded export are added automatically; add any others here.</div>
+<div class="card">
+{% for a in banks %}<form method="post" action="{{ url_for('bank_delete') }}" class="row" style="margin-bottom:6px"><span style="min-width:240px">{{ a }}</span><input type="hidden" name="name" value="{{ a }}"><button class="alt">Remove</button></form>{% endfor %}
+{% if not banks %}<div class="mut" style="margin-bottom:8px">None saved yet.</div>{% endif %}
+<form method="post" action="{{ url_for('bank_add') }}" class="row"><input name="name" required placeholder="Bank account name" style="min-width:240px"><button>Add bank account</button></form>
+</div>
 <h2>Accounts</h2>
 <div class="mut">Each account here is a group you review on the Check page: a name, the Paperless tag its receipts carry, and the bank accounts whose transactions belong to it.</div>
 {% if businesses %}<div class="card scroll"><table><tr><th>Name</th><th>Paperless tag</th><th>Bank accounts</th><th>Also checked</th><th></th></tr>
@@ -270,7 +300,7 @@ SETTINGS = HEAD + """
 def page(template, error=None, msg=None, **kw):
     r = load_results()
     return render_template_string(template, css=CSS, r=r, error=error, msg=msg,
-                                  businesses=load_config(),
+                                  businesses=load_config(), banks=saved_banks(),
                                   year=(r or {}).get("year", dt.date.today().year), **kw)
 
 
@@ -299,6 +329,21 @@ def settings():
     e = items[edit] if edit is not None and 0 <= edit < len(items) else None
     return page(SETTINGS, msg=request.args.get("msg"), tags=paperless_tags(), accounts=export_accounts(),
                 e=e, edit=edit if e else None)
+
+
+@app.post("/settings/bank/add")
+def bank_add():
+    name = request.form.get("name", "").strip()
+    if name:
+        save_banks(saved_banks() + [name])
+    return redirect(url_for("settings", msg="Added %s." % name if name else None))
+
+
+@app.post("/settings/bank/delete")
+def bank_delete():
+    name = request.form.get("name", "")
+    save_banks([x for x in saved_banks() if x != name])
+    return redirect(url_for("settings", msg="Removed %s." % name))
 
 
 @app.post("/settings/add")

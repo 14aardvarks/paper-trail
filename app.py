@@ -307,6 +307,16 @@ document.querySelectorAll('[data-biz]').forEach(function(box){
     if(sm){var m=cnt.missing||0,t=(cnt.ok||0)+' with receipt, '+m+' missing, '+(cnt.personal||0)+' paid personally';
       if(cnt.ignored)t+=', '+cnt.ignored+' not needed';sm.textContent=t;sm.className='mut sum';}}
   recount();
+  var tb=box.querySelector('table'),dir={},cur=null;
+  function sortBy(c,asc){var rows=[].slice.call(tb.querySelectorAll('tr[data-s]'));
+    rows.sort(function(a,b){var x=a.cells[c].textContent.trim(),y=b.cells[c].textContent.trim();
+      if(c===5)return (parseFloat(x)-parseFloat(y))*(asc?1:-1);return x.localeCompare(y)*(asc?1:-1);});
+    var par=rows[0]&&rows[0].parentNode;rows.forEach(function(r){par.appendChild(r);});
+    tb.querySelectorAll('th').forEach(function(h,i){h.textContent=h.textContent.replace(/ [\u25B2\u25BC]$/,'');
+      if(i===c)h.textContent+=asc?' \u25B2':' \u25BC';});}
+  [1,2,3,4,5].forEach(function(c){var h=tb.querySelectorAll('th')[c];h.style.cursor='pointer';h.title='Click to sort';
+    h.onclick=function(){dir[c]=cur===c?!dir[c]:(c===1||c===5?false:true);cur=c;sortBy(c,dir[c]);};});
+  dir[1]=false;cur=1;sortBy(1,false);
   box.querySelectorAll('form[action$="/ignore"]').forEach(function(fm){fm.addEventListener('submit',function(e){
     e.preventDefault();var btn=fm.querySelector('button');btn.disabled=true;
     fetch(fm.action,{method:'POST',body:new FormData(fm),headers:{'X-Requested-With':'fetch'}}).then(function(r){

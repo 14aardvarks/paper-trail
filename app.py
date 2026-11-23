@@ -130,9 +130,6 @@ def run_all(year=None):
     for b in businesses:
         accts = {a.strip().lower() for a in b["account"].split(";") if a.strip()}
         txns = mr.load_transactions(path, year, accts, False, False)
-        words = [w.strip().lower() for w in b.get("only", "").split(";") if w.strip()]
-        if words:
-            txns = [t for t in txns if any(w in (t["payee"] + " " + t["category"]).lower() for w in words)]
         docs = mr.load_receipts(pl, year, b["tag"], AMOUNT_FIELD)
         res = mr.match(txns, docs, 60, 0)
         used = {v[0] for v in res.values()}
@@ -213,7 +210,11 @@ button.alt{background:transparent;color:var(--fg);border:1px solid var(--line)}
 table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)}
 td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}.bad{color:var(--bad)}.ok{color:var(--acc)}
 .err{background:#f9dedc;color:#410e0b;padding:10px 12px;border-radius:8px;margin:12px 0}a{color:var(--acc)}
-.scroll{overflow-x:auto}button.on{background:var(--acc);color:#fff;border-color:var(--acc)}label{display:block;font-size:13px;color:var(--mut);margin:8px 0 2px}
+.scroll{overflow-x:auto}details.ms{position:relative}details.ms summary{list-style:none;cursor:pointer;padding:6px 12px;border:1px solid var(--line);border-radius:8px}
+details.ms[data-on] summary{background:var(--acc);color:#fff;border-color:var(--acc)}
+.msb{position:absolute;z-index:5;top:110%;left:0;min-width:240px;max-height:280px;overflow:auto;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px;box-shadow:0 4px 14px rgba(0,0,0,.25)}
+.msb label{display:block;margin:2px 0;color:var(--fg);font-size:14px;white-space:nowrap}.msb a{font-size:13px}
+button.on{background:var(--acc);color:#fff;border-color:var(--acc)}label{display:block;font-size:13px;color:var(--mut);margin:8px 0 2px}
 """
 
 HEAD = """<!doctype html><html lang="en"><head><meta charset="utf-8">
@@ -253,6 +254,10 @@ INDEX = HEAD + """
 <button type="button" class="alt f" data-f="ok">Has receipt</button>
 <button type="button" class="alt f" data-f="personal">Paid personally</button>
 <button type="button" class="alt f" data-f="ignored">Not needed</button>
+{% set cats = b.rows|map(attribute='category')|select|unique|sort|list %}
+{% set payees = b.rows|map(attribute='payee')|select|unique|sort|list %}
+{% if cats %}<details class="ms" data-k="cat"><summary class="alt">Category</summary><div class="msb">{% for c in cats %}<label><input type="checkbox" value="{{ c }}"> {{ c }}</label>{% endfor %}<a href="#" class="clr">Clear</a></div></details>{% endif %}
+{% if payees %}<details class="ms" data-k="payee"><summary class="alt">Payee</summary><div class="msb">{% for p in payees %}<label><input type="checkbox" value="{{ p }}"> {{ p }}</label>{% endfor %}<a href="#" class="clr">Clear</a></div></details>{% endif %}
 <input class="q" placeholder="Search" style="margin-left:auto;width:150px">
 <a href="{{ url_for('download', i=bi) }}">CSV</a></div>
 <form data-busy class="row" method="get" action="{{ url_for('export_docs') }}" style="margin-bottom:8px">
@@ -262,7 +267,7 @@ INDEX = HEAD + """
 <input type="date" name="end" value="{{ r.year }}-12-31" required>
 <button class="alt">Zip and download</button></form>
 <table><tr><th style="width:36px"></th><th>Date</th><th>Payee</th><th>Category</th><th>Receipt</th><th class="n">Amount</th><th></th></tr>
-{% for m in b.rows %}<tr data-s="{{ m.status }}"><td>{% if m.status == 'ok' %}<span class="ok" title="Has receipt">&#10003;</span>{% elif m.status == 'personal' %}<span title="Paid from a personal account" style="color:#d9a400">&#9888;</span>{% elif m.status == 'ignored' %}<span class="mut" title="Marked not needed">&ndash;</span>{% else %}<span class="bad" title="Missing receipt">&#10007;</span>{% endif %}</td>
+{% for m in b.rows %}<tr data-s="{{ m.status }}" data-cat="{{ m.category }}" data-payee="{{ m.payee }}"><td>{% if m.status == 'ok' %}<span class="ok" title="Has receipt">&#10003;</span>{% elif m.status == 'personal' %}<span title="Paid from a personal account" style="color:#d9a400">&#9888;</span>{% elif m.status == 'ignored' %}<span class="mut" title="Marked not needed">&ndash;</span>{% else %}<span class="bad" title="Missing receipt">&#10007;</span>{% endif %}</td>
 <td>{{ m.date }}</td><td>{{ m.payee }}</td><td>{{ m.category }}</td><td>{% if m.url %}<a href="{{ m.url }}">{{ m.title }}</a>{% endif %}</td><td class="n">{{ m.amount }}</td>
 <td>{% if m.status in ('missing','ignored') %}<form method="post" action="{{ url_for('ignore') }}" style="margin:0"><input type="hidden" name="i" value="{{ bi }}"><input type="hidden" name="r" value="{{ loop.index0 }}"><button class="alt" style="padding:2px 8px;font-size:12px">{{ 'Undo' if m.status == 'ignored' else 'Not needed' }}</button></form>{% endif %}</td></tr>{% endfor %}
 </table></div>
@@ -280,10 +285,19 @@ INDEX = HEAD + """
   try{var v=localStorage.getItem('pt-biz');if(v&&sel.querySelector('option[value="'+v+'"]'))sel.value=v;}catch(e){}
   sel.onchange=show;show();})();
 document.querySelectorAll('[data-biz]').forEach(function(box){
-  var f='all', q='';
+  var f='all', q='', sel={cat:[],payee:[]};
   function apply(){box.querySelectorAll('tr[data-s]').forEach(function(tr){
-    var ok=(f==='all'||tr.dataset.s===f)&&(!q||tr.textContent.toLowerCase().indexOf(q)>-1);
+    var ok=(f==='all'||tr.dataset.s===f)&&(!q||tr.textContent.toLowerCase().indexOf(q)>-1)
+      &&(!sel.cat.length||sel.cat.indexOf(tr.dataset.cat)>-1)&&(!sel.payee.length||sel.payee.indexOf(tr.dataset.payee)>-1);
     tr.style.display=ok?'':'none';});}
+  box.querySelectorAll('details.ms').forEach(function(d){
+    function upd(){sel[d.dataset.k]=[].slice.call(d.querySelectorAll('input:checked')).map(function(x){return x.value;});
+      var n=sel[d.dataset.k].length;d.querySelector('summary').textContent=d.dataset.k==='cat'?'Category':'Payee';
+      if(n){d.querySelector('summary').textContent+=' ('+n+')';d.setAttribute('data-on','1');}else d.removeAttribute('data-on');apply();}
+    d.querySelectorAll('input').forEach(function(i){i.onchange=upd;});
+    d.querySelector('.clr').onclick=function(e){e.preventDefault();d.querySelectorAll('input').forEach(function(i){i.checked=false;});upd();};
+    document.addEventListener('click',function(e){if(!d.contains(e.target))d.removeAttribute('open');});
+  });
   box.querySelectorAll('.f').forEach(function(b){b.onclick=function(){
     f=b.dataset.f;box.querySelectorAll('.f').forEach(function(x){x.classList.toggle('on',x===b);});apply();};});
   var cnt={};box.querySelectorAll('tr[data-s]').forEach(function(tr){cnt[tr.dataset.s]=(cnt[tr.dataset.s]||0)+1;});
@@ -310,8 +324,8 @@ SETTINGS = HEAD + """
 </div>
 <h2>Accounts</h2>
 <div class="mut">Each account here is a group you review on the Check page: a name, the Paperless tag its receipts carry, and the bank accounts whose transactions belong to it.</div>
-{% if businesses %}<div class="card scroll"><table><tr><th>Name</th><th>Paperless tag</th><th>Bank accounts</th><th>Also checked</th><th>Only</th><th></th></tr>
-{% for b in businesses %}<tr><td>{{ b.name }}</td><td>{{ b.tag }}</td><td>{{ b.account.replace(';', ', ') }}</td><td>{{ b.personal.replace(';', ', ') }}</td><td>{{ b.get('only', '').replace(';', ', ') }}</td>
+{% if businesses %}<div class="card scroll"><table><tr><th>Name</th><th>Paperless tag</th><th>Bank accounts</th><th>Also checked</th><th></th></tr>
+{% for b in businesses %}<tr><td>{{ b.name }}</td><td>{{ b.tag }}</td><td>{{ b.account.replace(';', ', ') }}</td><td>{{ b.personal.replace(';', ', ') }}</td>
 <td style="white-space:nowrap"><a href="{{ url_for('settings', edit=loop.index0) }}">Edit</a>
 <form method="post" action="{{ url_for('delete', i=loop.index0) }}" style="display:inline" onsubmit="return confirm('Remove this account?')"><button class="alt">Remove</button></form></td></tr>{% endfor %}
 </table></div>{% endif %}
@@ -330,8 +344,6 @@ SETTINGS = HEAD + """
 <label>Also look for receipts in these accounts (optional, separate with ;)</label><input name="personal" value="{{ e.personal if e else '' }}">
 <div class="mut" style="margin-top:8px">Upload your bank export on the Check page and your bank accounts will show up as tickboxes.</div>
 {% endif %}
-<label>Only include transactions whose payee or category contains (optional, separate with ;). Use this for a personal account so only things like utilities are checked.</label>
-<input name="only" value="{{ e.get('only', '') if e else '' }}" placeholder="duke energy;water;internet;Utilities" style="width:100%;max-width:520px">
 <div style="margin-top:12px" class="row"><button>{{ 'Save' if e else 'Add account' }}</button>
 {% if e %}<a href="{{ url_for('settings') }}">Cancel</a>{% endif %}</div>
 </form>
@@ -366,8 +378,7 @@ def index():
 def form_entry():
     return {"name": request.form.get("name", "").strip(), "tag": request.form.get("tag", "").strip(),
             "account": ";".join(x.strip() for x in request.form.getlist("account") if x.strip()),
-            "personal": ";".join(x.strip() for x in request.form.getlist("personal") if x.strip()),
-            "only": request.form.get("only", "").strip()}
+            "personal": ";".join(x.strip() for x in request.form.getlist("personal") if x.strip())}
 
 
 @app.get("/settings")

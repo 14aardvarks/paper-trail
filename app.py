@@ -56,6 +56,20 @@ def save_config(items):
     _write(d)
 
 
+def ignored_keys():
+    return set(_read().get("ignored", []))
+
+
+def save_ignored(keys):
+    d = _read()
+    d["ignored"] = sorted(keys)
+    _write(d)
+
+
+def row_key(date, payee, amount):
+    return "%s|%s|%s" % (date, payee, amount)
+
+
 def saved_banks():
     return _read().get("bank_accounts", [])
 
@@ -112,6 +126,7 @@ def run_all(year=None):
     out = {"ran_at": dt.datetime.now().isoformat(timespec="seconds"), "year": year,
            "export": os.path.basename(path), "businesses": []}
     newest = None
+    skip = ignored_keys()
     for b in businesses:
         accts = {a.strip().lower() for a in b["account"].split(";") if a.strip()}
         txns = mr.load_transactions(path, year, accts, False, False)
@@ -139,6 +154,8 @@ def run_all(year=None):
         for t in txns:
             r = {"date": str(t["date"]), "payee": t["payee"], "amount": "%.2f" % (t["signed"] / 100),
                  "category": t["category"], "status": "missing", "title": "", "url": ""}
+            if row_key(r["date"], r["payee"], r["amount"]) in skip:
+                r["status"] = "ignored"
             if t["id"] in res:
                 d = byid[res[t["id"]][0]]
                 r.update(status="ok", title=d["title"], url="%s/documents/%d/details" % (PL_URL, d["id"]))
@@ -209,39 +226,42 @@ HEAD = """<!doctype html><html lang="en"><head><meta charset="utf-8">
 INDEX = HEAD + """
 <div class="mut">Paperless receipts matched against your bank export.</div>
 <div class="card">
-<form class="row" method="post" action="{{ url_for('upload') }}" enctype="multipart/form-data">
+<form data-busy class="row" method="post" action="{{ url_for('upload') }}" enctype="multipart/form-data">
 <input type="file" name="file" accept=".csv" required>
 <input type="number" name="year" value="{{ year }}" style="width:90px">
 <button>Upload and check</button></form>
-<form class="row" style="margin-top:8px" method="post" action="{{ url_for('rerun') }}">
+<form data-busy class="row" style="margin-top:8px" method="post" action="{{ url_for('rerun') }}">
 <input type="hidden" name="year" value="{{ year }}"><button class="alt">Re-run on latest export</button></form>
 </div>
 {% if not businesses %}<div class="card">No accounts yet. <a href="{{ url_for('settings') }}">Add one in Settings.</a></div>{% endif %}
 {% if r %}
+{% if stale is not none and stale > 14 %}<div class="card" style="border-color:#d9a400">Your newest transaction is {{ stale }} days old. Export from your budget app again for current data.</div>{% endif %}
 <div class="mut">Export {{ r.export }}, newest transaction {{ r.newest_transaction or 'unknown' }}. Checked {{ r.ran_at }}.</div>
 <div class="row" style="margin:14px 0 0"><label style="margin:0">Viewing</label>
 <select id="biz">{% for b in r.businesses %}<option value="{{ loop.index0 }}">{{ b.name }}</option>{% endfor %}</select></div>
 {% for b in r.businesses %}{% set bi = loop.index0 %}
 <section data-sec="{{ bi }}">
 <h2>{{ b.name }}</h2>
-<div class="mut">{{ b.rows|selectattr('status','equalto','ok')|list|length }} with receipt, <span class="{{ 'bad' if b.missing else 'ok' }}">{{ b.missing|length }} missing</span>, {{ b.paid_personal|length }} paid personally</div>
+<div class="mut">{{ b.rows|selectattr('status','equalto','ok')|list|length }} with receipt, <span class="{{ 'bad' if b.missing else 'ok' }}">{{ b.missing|length }} missing</span>, {{ b.paid_personal|length }} paid personally{% set ig = b.rows|selectattr('status','equalto','ignored')|list|length %}{% if ig %}, {{ ig }} not needed{% endif %}</div>
 <div class="card scroll" data-biz>
 <div class="row" style="margin-bottom:8px">
 <button type="button" class="alt f on" data-f="all">All</button>
 <button type="button" class="alt f" data-f="missing">Missing</button>
 <button type="button" class="alt f" data-f="ok">Has receipt</button>
 <button type="button" class="alt f" data-f="personal">Paid personally</button>
+<button type="button" class="alt f" data-f="ignored">Not needed</button>
 <input class="q" placeholder="Search" style="margin-left:auto;width:150px">
 <a href="{{ url_for('download', i=bi) }}">CSV</a></div>
-<form class="row" method="get" action="{{ url_for('export_docs') }}" style="margin-bottom:8px">
+<form data-busy class="row" method="get" action="{{ url_for('export_docs') }}" style="margin-bottom:8px">
 <input type="hidden" name="i" value="{{ bi }}">
 <span class="mut">Download list and documents</span>
 <input type="date" name="start" value="{{ r.year }}-01-01" required>
 <input type="date" name="end" value="{{ r.year }}-12-31" required>
-<button class="alt">Zip</button></form>
-<table><tr><th style="width:36px"></th><th>Date</th><th>Payee</th><th>Category</th><th>Receipt</th><th class="n">Amount</th></tr>
-{% for m in b.rows %}<tr data-s="{{ m.status }}"><td>{% if m.status == 'ok' %}<span class="ok" title="Has receipt">&#10003;</span>{% elif m.status == 'personal' %}<span title="Paid from a personal account" style="color:#d9a400">&#9888;</span>{% else %}<span class="bad" title="Missing receipt">&#10007;</span>{% endif %}</td>
-<td>{{ m.date }}</td><td>{{ m.payee }}</td><td>{{ m.category }}</td><td>{% if m.url %}<a href="{{ m.url }}">{{ m.title }}</a>{% endif %}</td><td class="n">{{ m.amount }}</td></tr>{% endfor %}
+<button class="alt">Zip and download</button></form>
+<table><tr><th style="width:36px"></th><th>Date</th><th>Payee</th><th>Category</th><th>Receipt</th><th class="n">Amount</th><th></th></tr>
+{% for m in b.rows %}<tr data-s="{{ m.status }}"><td>{% if m.status == 'ok' %}<span class="ok" title="Has receipt">&#10003;</span>{% elif m.status == 'personal' %}<span title="Paid from a personal account" style="color:#d9a400">&#9888;</span>{% elif m.status == 'ignored' %}<span class="mut" title="Marked not needed">&ndash;</span>{% else %}<span class="bad" title="Missing receipt">&#10007;</span>{% endif %}</td>
+<td>{{ m.date }}</td><td>{{ m.payee }}</td><td>{{ m.category }}</td><td>{% if m.url %}<a href="{{ m.url }}">{{ m.title }}</a>{% endif %}</td><td class="n">{{ m.amount }}</td>
+<td>{% if m.status in ('missing','ignored') %}<form method="post" action="{{ url_for('ignore') }}" style="margin:0"><input type="hidden" name="i" value="{{ bi }}"><input type="hidden" name="r" value="{{ loop.index0 }}"><button class="alt" style="padding:2px 8px;font-size:12px">{{ 'Undo' if m.status == 'ignored' else 'Not needed' }}</button></form>{% endif %}</td></tr>{% endfor %}
 </table></div>
 {% if b.orphans %}<details class="card"><summary>{{ b.orphans|length }} receipts with no transaction</summary><div class="scroll"><table>
 <tr><th>Date</th><th>Receipt</th><th class="n">Amount</th></tr>
@@ -263,14 +283,23 @@ document.querySelectorAll('[data-biz]').forEach(function(box){
     tr.style.display=ok?'':'none';});}
   box.querySelectorAll('.f').forEach(function(b){b.onclick=function(){
     f=b.dataset.f;box.querySelectorAll('.f').forEach(function(x){x.classList.toggle('on',x===b);});apply();};});
+  var cnt={};box.querySelectorAll('tr[data-s]').forEach(function(tr){cnt[tr.dataset.s]=(cnt[tr.dataset.s]||0)+1;});
+  var tot=box.querySelectorAll('tr[data-s]').length;
+  box.querySelectorAll('.f').forEach(function(b){var n=b.dataset.f==='all'?tot:(cnt[b.dataset.f]||0);b.textContent+=' ('+n+')';});
   box.querySelector('.q').oninput=function(e){q=e.target.value.toLowerCase();apply();};
 });
+</script>
+<script>
+document.querySelectorAll('form[data-busy]').forEach(function(f){f.addEventListener('submit',function(){
+  var b=f.querySelector('button');if(!b)return;var t=b.textContent;
+  setTimeout(function(){b.disabled=true;b.textContent='Working...';},0);
+  if(f.method==='get')setTimeout(function(){b.disabled=false;b.textContent=t;},20000);});});
 </script>
 </main></body></html>"""
 
 SETTINGS = HEAD + """
 <h2>Bank accounts</h2>
-<div class="mut">Names must match the Account column in your Actual export. Accounts found in an uploaded export are added automatically; add any others here.</div>
+<div class="mut">Names must match the Account column in your bank export. Accounts found in an uploaded export are added automatically; add any others here.</div>
 <div class="card">
 {% for a in banks %}<form method="post" action="{{ url_for('bank_delete') }}" class="row" style="margin-bottom:6px"><span style="min-width:240px">{{ a }}</span><input type="hidden" name="name" value="{{ a }}"><button class="alt">Remove</button></form>{% endfor %}
 {% if not banks %}<div class="mut" style="margin-bottom:8px">None saved yet.</div>{% endif %}
@@ -320,7 +349,13 @@ def parse_year():
 
 @app.get("/")
 def index():
-    return page(INDEX, msg=request.args.get("msg"))
+    r = load_results()
+    stale = None
+    try:
+        stale = (dt.date.today() - dt.date.fromisoformat(r["newest_transaction"])).days
+    except (TypeError, KeyError, ValueError):
+        pass
+    return page(INDEX, msg=request.args.get("msg"), stale=stale)
 
 
 def form_entry():
@@ -436,7 +471,7 @@ def download(i):
 
 def cpa_html(name, start, end, entries):
     from html import escape
-    labels = {"ok": "Receipt", "personal": "Paid personally", "missing": "No receipt", "none": "No transaction"}
+    labels = {"ok": "Receipt", "personal": "Paid personally", "missing": "No receipt", "none": "No transaction", "ignored": "Not needed"}
     tr = []
     for st, d, p, c, a, path in entries:
         link = '<a href="%s">open</a>' % escape(path, quote=True) if path else ""
@@ -453,7 +488,7 @@ th{cursor:pointer;position:sticky;top:0;background:#f6f8f9}tr[data-s=missing] td
 tr[data-s=ok] td:first-child{color:#2f6f3e}a{color:#2f6f3e}</style></head><body>
 <h1>%(n)s</h1><div class="m">%(s)s to %(e)s. %(c)d items. Click a column heading to sort.</div>
 <div class="bar"><button class="on" data-f="all">All</button><button data-f="ok">Receipt</button>
-<button data-f="missing">No receipt</button><button data-f="personal">Paid personally</button><button data-f="none">No transaction</button>
+<button data-f="missing">No receipt</button><button data-f="personal">Paid personally</button><button data-f="none">No transaction</button><button data-f="ignored">Not needed</button>
 <input id="q" placeholder="Search" style="margin-left:auto"></div>
 <table id="t"><thead><tr><th>Status</th><th>Date</th><th>Payee</th><th>Category</th><th class="n">Amount</th><th>File</th></tr></thead>
 <tbody>%(rows)s</tbody></table>
@@ -524,6 +559,29 @@ def export_docs():
     fn = "%s_%s_to_%s.zip" % (slug(b["name"]).lower(), start, end)
     return Response(tmp, mimetype="application/zip",
                     headers={"Content-Disposition": "attachment; filename=" + fn})
+
+
+@app.post("/ignore")
+def ignore():
+    r = load_results()
+    try:
+        b = r["businesses"][int(request.form.get("i", ""))]
+        row = b["rows"][int(request.form.get("r", ""))]
+    except (TypeError, KeyError, ValueError, IndexError):
+        return redirect(url_for("index"))
+    key = row_key(row["date"], row["payee"], row["amount"])
+    keys = ignored_keys()
+    if row["status"] == "missing":
+        keys.add(key)
+        row["status"] = "ignored"
+    elif row["status"] == "ignored":
+        keys.discard(key)
+        row["status"] = "missing"
+    save_ignored(keys)
+    b["missing"] = [x for x in b["rows"] if x["status"] == "missing"]
+    with lock, open(RESULTS, "w") as f:
+        json.dump(r, f)
+    return redirect(url_for("index"))
 
 
 @app.get("/logo.svg")

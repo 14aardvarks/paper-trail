@@ -130,6 +130,9 @@ def run_all(year=None):
     for b in businesses:
         accts = {a.strip().lower() for a in b["account"].split(";") if a.strip()}
         txns = mr.load_transactions(path, year, accts, False, False)
+        words = [w.strip().lower() for w in b.get("only", "").split(";") if w.strip()]
+        if words:
+            txns = [t for t in txns if any(w in (t["payee"] + " " + t["category"]).lower() for w in words)]
         docs = mr.load_receipts(pl, year, b["tag"], AMOUNT_FIELD)
         res = mr.match(txns, docs, 60, 0)
         used = {v[0] for v in res.values()}
@@ -307,8 +310,8 @@ SETTINGS = HEAD + """
 </div>
 <h2>Accounts</h2>
 <div class="mut">Each account here is a group you review on the Check page: a name, the Paperless tag its receipts carry, and the bank accounts whose transactions belong to it.</div>
-{% if businesses %}<div class="card scroll"><table><tr><th>Name</th><th>Paperless tag</th><th>Bank accounts</th><th>Also checked</th><th></th></tr>
-{% for b in businesses %}<tr><td>{{ b.name }}</td><td>{{ b.tag }}</td><td>{{ b.account.replace(';', ', ') }}</td><td>{{ b.personal.replace(';', ', ') }}</td>
+{% if businesses %}<div class="card scroll"><table><tr><th>Name</th><th>Paperless tag</th><th>Bank accounts</th><th>Also checked</th><th>Only</th><th></th></tr>
+{% for b in businesses %}<tr><td>{{ b.name }}</td><td>{{ b.tag }}</td><td>{{ b.account.replace(';', ', ') }}</td><td>{{ b.personal.replace(';', ', ') }}</td><td>{{ b.get('only', '').replace(';', ', ') }}</td>
 <td style="white-space:nowrap"><a href="{{ url_for('settings', edit=loop.index0) }}">Edit</a>
 <form method="post" action="{{ url_for('delete', i=loop.index0) }}" style="display:inline" onsubmit="return confirm('Remove this account?')"><button class="alt">Remove</button></form></td></tr>{% endfor %}
 </table></div>{% endif %}
@@ -327,6 +330,8 @@ SETTINGS = HEAD + """
 <label>Also look for receipts in these accounts (optional, separate with ;)</label><input name="personal" value="{{ e.personal if e else '' }}">
 <div class="mut" style="margin-top:8px">Upload your bank export on the Check page and your bank accounts will show up as tickboxes.</div>
 {% endif %}
+<label>Only include transactions whose payee or category contains (optional, separate with ;). Use this for a personal account so only things like utilities are checked.</label>
+<input name="only" value="{{ e.get('only', '') if e else '' }}" placeholder="duke energy;water;internet;Utilities" style="width:100%;max-width:520px">
 <div style="margin-top:12px" class="row"><button>{{ 'Save' if e else 'Add account' }}</button>
 {% if e %}<a href="{{ url_for('settings') }}">Cancel</a>{% endif %}</div>
 </form>
@@ -361,7 +366,8 @@ def index():
 def form_entry():
     return {"name": request.form.get("name", "").strip(), "tag": request.form.get("tag", "").strip(),
             "account": ";".join(x.strip() for x in request.form.getlist("account") if x.strip()),
-            "personal": ";".join(x.strip() for x in request.form.getlist("personal") if x.strip())}
+            "personal": ";".join(x.strip() for x in request.form.getlist("personal") if x.strip()),
+            "only": request.form.get("only", "").strip()}
 
 
 @app.get("/settings")

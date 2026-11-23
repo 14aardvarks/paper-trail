@@ -10,7 +10,7 @@ import threading
 import zipfile
 import time
 
-from flask import Flask, Response, redirect, render_template_string, request, url_for
+from flask import Flask, Response, jsonify, redirect, render_template_string, request, url_for
 
 import match_receipts as mr
 
@@ -154,8 +154,6 @@ def run_all(year=None):
         for t in txns:
             r = {"date": str(t["date"]), "payee": t["payee"], "amount": "%.2f" % (t["signed"] / 100),
                  "category": t["category"], "status": "missing", "title": "", "url": ""}
-            if row_key(r["date"], r["payee"], r["amount"]) in skip:
-                r["status"] = "ignored"
             if t["id"] in res:
                 d = byid[res[t["id"]][0]]
                 r.update(status="ok", title=d["title"], url="%s/documents/%d/details" % (PL_URL, d["id"]))
@@ -163,6 +161,10 @@ def run_all(year=None):
         for p in paid_personal:
             rows.append({"date": p["date"], "payee": p["payee"], "amount": p["amount"], "category": p.get("category", ""),
                          "status": "personal", "title": p["title"], "url": p["url"]})
+        for r in rows:
+            if row_key(r["date"], r["payee"], r["amount"]) in skip:
+                r["was"] = r["status"]
+                r["status"] = "ignored"
         rows.sort(key=lambda x: x["date"])
         out["businesses"].append({
             "name": b["name"], "tag": b["tag"], "account": b["account"],
@@ -269,7 +271,7 @@ INDEX = HEAD + """
 <table><tr><th style="width:36px"></th><th>Date</th><th>Payee</th><th>Category</th><th>Receipt</th><th class="n">Amount</th><th></th></tr>
 {% for m in b.rows %}<tr data-s="{{ m.status }}" data-cat="{{ m.category }}" data-payee="{{ m.payee }}"><td>{% if m.status == 'ok' %}<span class="ok" title="Has receipt">&#10003;</span>{% elif m.status == 'personal' %}<span title="Paid from a personal account" style="color:#d9a400">&#9888;</span>{% elif m.status == 'ignored' %}<span class="mut" title="Marked not needed">&ndash;</span>{% else %}<span class="bad" title="Missing receipt">&#10007;</span>{% endif %}</td>
 <td>{{ m.date }}</td><td>{{ m.payee }}</td><td>{{ m.category }}</td><td>{% if m.url %}<a href="{{ m.url }}">{{ m.title }}</a>{% endif %}</td><td class="n">{{ m.amount }}</td>
-<td>{% if m.status in ('missing','ignored') %}<form method="post" action="{{ url_for('ignore') }}" style="margin:0"><input type="hidden" name="i" value="{{ bi }}"><input type="hidden" name="r" value="{{ loop.index0 }}"><button class="alt" style="padding:2px 8px;font-size:12px">{{ 'Undo' if m.status == 'ignored' else 'Not needed' }}</button></form>{% endif %}</td></tr>{% endfor %}
+<td><form method="post" action="{{ url_for('ignore') }}" style="margin:0"><input type="hidden" name="i" value="{{ bi }}"><input type="hidden" name="r" value="{{ loop.index0 }}"><button class="alt" style="padding:2px 8px;font-size:12px">{{ 'Undo' if m.status == 'ignored' else 'Not needed' }}</button></form></td></tr>{% endfor %}
 </table></div>
 {% if b.orphans %}<details class="card"><summary>{{ b.orphans|length }} receipts with no transaction</summary><div class="scroll"><table>
 <tr><th>Date</th><th>Receipt</th><th class="n">Amount</th></tr>
@@ -320,9 +322,10 @@ document.querySelectorAll('[data-biz]').forEach(function(box){
   box.querySelectorAll('form[action$="/ignore"]').forEach(function(fm){fm.addEventListener('submit',function(e){
     e.preventDefault();var btn=fm.querySelector('button');btn.disabled=true;
     fetch(fm.action,{method:'POST',body:new FormData(fm),headers:{'X-Requested-With':'fetch'}}).then(function(r){
-      if(!r.ok)throw 0;var tr=fm.closest('tr'),to=tr.dataset.s==='missing'?'ignored':'missing';tr.dataset.s=to;
-      tr.cells[0].innerHTML=to==='ignored'?'<span class="mut" title="Marked not needed">&ndash;</span>':'<span class="bad" title="Missing receipt">&#10007;</span>';
-      btn.textContent=to==='ignored'?'Undo':'Not needed';btn.disabled=false;recount();apply();
+      if(!r.ok)throw 0;return r.json();}).then(function(j){var tr=fm.closest('tr'),to=j.status;tr.dataset.s=to;
+      var ic={ok:'<span class="ok" title="Has receipt">&#10003;</span>',personal:'<span title="Paid from a personal account" style="color:#d9a400">&#9888;</span>',
+        ignored:'<span class="mut" title="Marked not needed">&ndash;</span>',missing:'<span class="bad" title="Missing receipt">&#10007;</span>'};
+      tr.cells[0].innerHTML=ic[to]||'';btn.textContent=to==='ignored'?'Undo':'Not needed';btn.disabled=false;recount();apply();
     }).catch(function(){btn.disabled=false;fm.submit();});});});
   box.querySelector('.q').oninput=function(e){q=e.target.value.toLowerCase();apply();};
 });
@@ -609,18 +612,19 @@ def ignore():
         return redirect(url_for("index"))
     key = row_key(row["date"], row["payee"], row["amount"])
     keys = ignored_keys()
-    if row["status"] == "missing":
+    if row["status"] != "ignored":
         keys.add(key)
+        row["was"] = row["status"]
         row["status"] = "ignored"
-    elif row["status"] == "ignored":
+    else:
         keys.discard(key)
-        row["status"] = "missing"
+        row["status"] = row.get("was", "missing")
     save_ignored(keys)
     b["missing"] = [x for x in b["rows"] if x["status"] == "missing"]
     with lock, open(RESULTS, "w") as f:
         json.dump(r, f)
     if request.headers.get("X-Requested-With") == "fetch":
-        return "", 204
+        return jsonify(status=row["status"])
     return redirect(url_for("index"))
 
 

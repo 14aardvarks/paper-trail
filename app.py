@@ -200,16 +200,16 @@ LOGO = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width
         '<path d="M40.5 44l4 4 7-8" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/></svg>')
 
 CSS = """
-:root{color-scheme:dark;--bg:#080a14;--fg:#eef3f8;--mut:#a9b8c9;--line:#3a5a78;--card:#183a5a;--acc:#7a52c7;--ok:#4ecfa0;--bad:#f2867f}
+:root{color-scheme:dark;--bg:#080a14;--fg:#eef3f8;--mut:#a9b8c9;--line:#3a5a78;--card:#12304c;--acc:#9333ea;--ok:#4ecfa0;--bad:#f2867f}
 
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,sans-serif}
 main{max-width:860px;margin:0 auto;padding:20px 16px 60px}h1{font-size:22px;margin:0 0 4px}h2{font-size:17px;margin:28px 0 8px}
 .mut{color:var(--mut)}.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin:12px 0}
 .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}nav{display:flex;gap:14px;margin:6px 0 12px}
-button,input,select{font:inherit}input,select{padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:#1d3d5c;color:var(--fg)}
+button,input,select{font:inherit}input,select{padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg)}
 button{background:var(--acc);color:#fff;border:0;border-radius:8px;padding:8px 14px;cursor:pointer}
 button.alt{background:transparent;color:var(--fg);border:1px solid var(--line)}
-table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)}th{background:#35546f}td{background:#2c4a66}.card td{background:transparent}.card tr:hover td{background:#2c4a66}tr:hover td{background:#35546f}
+table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)}th{background:#35546f}td{background:#2c4a66}tr:hover td{background:#35546f}
 td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}.bad{color:var(--bad)}.ok{color:var(--ok)}
 .err{background:#4a1f24;color:#ffd9d6;padding:10px 12px;border-radius:8px;margin:12px 0}a{color:#c4a5ff}
 .scroll{overflow-x:auto}details.ms{position:relative}details.ms summary{list-style:none;cursor:pointer;padding:6px 12px;border:1px solid var(--line);border-radius:8px}
@@ -523,7 +523,7 @@ def cpa_html(name, start, end, entries):
 body{font:15px/1.5 system-ui,sans-serif;margin:0;padding:20px;color:#e8eef5;background:#05060f}h1{font-size:20px;margin:0}
 .m{color:#9fb0c3;margin:2px 0 14px}.bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
 button,input{font:inherit;padding:6px 10px;border:1px solid #27435e;border-radius:8px;background:#0f2338;color:#e8eef5}
-button.on{background:#7a52c7;color:#fff;border-color:#7a52c7}table{border-collapse:collapse;width:100%%}
+button.on{background:#7c5cd6;color:#fff;border-color:#7c5cd6}table{border-collapse:collapse;width:100%%}
 th,td{text-align:left;padding:6px 8px;border-bottom:1px solid #27435e}td.n,th.n{text-align:right}
 th{cursor:pointer;position:sticky;top:0;background:#35546f}tr[data-s=missing] td:first-child{color:#f2867f}
 tr[data-s=ok] td:first-child{color:#2fb67c}a{color:#c4a5ff}</style></head><body>

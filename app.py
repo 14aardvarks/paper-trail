@@ -193,15 +193,15 @@ def load_results():
 
 # ---------- pages ----------
 
-LOGO = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#2f6f3e"/>'
+LOGO = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#6b46c1"/>'
         '<path d="M18 10h28v44l-5-3-4.5 3-4.5-3-4.5 3-4.5-3-5 3z" fill="#fff"/>'
-        '<path d="M24 22h16M24 30h16M24 38h9" stroke="#2f6f3e" stroke-width="3" stroke-linecap="round"/>'
-        '<circle cx="46" cy="44" r="11" fill="#6fbf80" stroke="#2f6f3e" stroke-width="3"/>'
+        '<path d="M24 22h16M24 30h16M24 38h9" stroke="#6b46c1" stroke-width="3" stroke-linecap="round"/>'
+        '<circle cx="46" cy="44" r="11" fill="#a78bfa" stroke="#6b46c1" stroke-width="3"/>'
         '<path d="M40.5 44l4 4 7-8" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/></svg>')
 
 CSS = """
-:root{--bg:#fff;--fg:#1d2327;--mut:#5d6870;--line:#dde2e6;--card:#f6f8f9;--acc:#2f6f3e;--bad:#b3261e}
-@media (prefers-color-scheme:dark){:root{--bg:#121516;--fg:#e6eaec;--mut:#9aa6ad;--line:#2b3236;--card:#1a1f21;--acc:#6fbf80;--bad:#f2867f}}
+:root{--bg:#fff;--fg:#1d2327;--mut:#5d6870;--line:#dde2e6;--card:#f6f8f9;--acc:#6b46c1;--bad:#b3261e}
+@media (prefers-color-scheme:dark){:root{--bg:#121516;--fg:#e6eaec;--mut:#9aa6ad;--line:#2b3236;--card:#1a1f21;--acc:#a78bfa;--bad:#f2867f}}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,sans-serif}
 main{max-width:860px;margin:0 auto;padding:20px 16px 60px}h1{font-size:22px;margin:0 0 4px}h2{font-size:17px;margin:28px 0 8px}
 .mut{color:var(--mut)}.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin:12px 0}
@@ -523,10 +523,10 @@ def cpa_html(name, start, end, entries):
 body{font:15px/1.5 system-ui,sans-serif;margin:0;padding:20px;color:#1d2327}h1{font-size:20px;margin:0}
 .m{color:#5d6870;margin:2px 0 14px}.bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
 button,input{font:inherit;padding:6px 10px;border:1px solid #c9d0d5;border-radius:8px;background:#fff}
-button.on{background:#2f6f3e;color:#fff;border-color:#2f6f3e}table{border-collapse:collapse;width:100%%}
+button.on{background:#6b46c1;color:#fff;border-color:#6b46c1}table{border-collapse:collapse;width:100%%}
 th,td{text-align:left;padding:6px 8px;border-bottom:1px solid #e3e7ea}td.n,th.n{text-align:right}
 th{cursor:pointer;position:sticky;top:0;background:#f6f8f9}tr[data-s=missing] td:first-child{color:#b3261e}
-tr[data-s=ok] td:first-child{color:#2f6f3e}a{color:#2f6f3e}</style></head><body>
+tr[data-s=ok] td:first-child{color:#2f6f3e}a{color:#6b46c1}</style></head><body>
 <h1>%(n)s</h1><div class="m">%(s)s to %(e)s. %(c)d items. Click a column heading to sort.</div>
 <div class="bar"><button class="on" data-f="all">All</button><button data-f="ok">Receipt</button>
 <button data-f="missing">No receipt</button><button data-f="personal">Paid personally</button><button data-f="none">No transaction</button><button data-f="ignored">Not needed</button>
